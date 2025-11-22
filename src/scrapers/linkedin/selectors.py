@@ -18,6 +18,14 @@ class Selectors:
         def profile_posts(username: str) -> str:
             return f"https://www.linkedin.com/in/{username}/recent-activity/all/"
 
+        @staticmethod
+        def company(company_name: str) -> str:
+            return f"https://www.linkedin.com/company/{company_name}/"
+
+        @staticmethod
+        def company_posts(company_name: str) -> str:
+            return f"https://www.linkedin.com/company/{company_name}/posts/?feedView=all"
+
     class Login:
         """Login page selectors."""
         USERNAME_INPUT = 'input#username'
@@ -32,6 +40,12 @@ class Selectors:
             'input[placeholder*="Search"]',
             'div[data-test-id="nav-search-bar"]',
             'button[data-control-name="nav.homepage"]',
+            # Additional indicators for modern LinkedIn
+            'div.global-nav',
+            'div.feed-identity-module',
+            'nav#global-nav',
+            'button[data-control-name="actor"]',
+            'div.share-box-feed-entry',
         ]
         LOGIN_BUTTON = 'a[href*="/login"]'
 
@@ -66,8 +80,13 @@ class Selectors:
         COMMENT_TEXT = 'span.comments-comment-item__main-content'
         COMMENT_AUTHOR = 'span.comments-post-meta__name-text'
         COMMENT_TIME = 'time.comments-comment-item__timestamp'
+        COMMENT_LIKES = 'button.comments-comment-social-bar__reactions-count'
+        COMMENT_LIKES_ALT = 'span.social-details-social-counts__reactions-count'
         LOAD_MORE = 'button.comments-comments-list__load-more-comments-button'
+        LOAD_MORE_ALT = 'button:has-text("Load more comments")'
         SHOW_REPLIES = 'button[aria-label*="replies"]'
+        SHOW_REPLIES_ALT = 'button.comments-comment-social-bar__replies-count'
+        REPLY_CONTAINER = 'article.comments-reply-item'
 
     class Popups:
         """Popup/modal selectors."""
@@ -75,3 +94,11 @@ class Selectors:
         CLOSE = 'button[aria-label="Close"]'
         NOT_NOW = 'button:has-text("Not now")'
         SKIP = 'button:has-text("Skip")'
+
+    class RateLimit:
+        """Rate limit detection selectors."""
+        CHALLENGE = 'div[data-test-id="challenge"]'
+        CAPTCHA = 'iframe[title*="recaptcha"]'
+        RESTRICTED = 'h1:has-text("restricted")'
+        TOO_MANY_REQUESTS = 'h1:has-text("too many requests")'
+        SIGN_IN_WALL = 'div.sign-in-modal'

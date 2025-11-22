@@ -20,6 +20,10 @@ class Selectors:
         # Cookie consent
         COOKIE_ACCEPT = "div[role='button']:has-text('Accept all cookies')"
 
+        # OAuth sign-in options
+        GOOGLE_SIGNIN = "div[role='button']:has-text('Sign in with Google'), button:has-text('Sign in with Google')"
+        APPLE_SIGNIN = "div[role='button']:has-text('Sign in with Apple'), button:has-text('Sign in with Apple')"
+
     # =========================================================================
     # HOME PAGE / LOGGED IN STATE SELECTORS
     # =========================================================================
@@ -127,3 +131,25 @@ class Selectors:
         @staticmethod
         def tweet(username: str, tweet_id: str) -> str:
             return f"https://x.com/{username}/status/{tweet_id}"
+
+    # =========================================================================
+    # RATE LIMIT DETECTION SELECTORS
+    # =========================================================================
+    class RateLimit:
+        """Rate limit and error detection selectors."""
+        # Rate limit indicators
+        RATE_LIMIT_ERROR = "span:has-text('Rate limit exceeded')"
+        TOO_MANY_REQUESTS = "span:has-text('Too many requests')"
+        TRY_AGAIN = "span:has-text('Something went wrong. Try reloading')"
+
+        # Temporary restrictions
+        TEMPORARY_RESTRICTION = "span:has-text('temporarily restricted')"
+        SUSPICIOUS_ACTIVITY = "span:has-text('suspicious activity')"
+
+        # Account issues
+        ACCOUNT_SUSPENDED = "span:has-text('Account suspended')"
+        ACCOUNT_LOCKED = "span:has-text('Your account has been locked')"
+
+        # Login walls
+        LOGIN_WALL = "div[data-testid='loginScreen']"
+        SIGNUP_WALL = "div[data-testid='signupScreen']"

@@ -1,10 +1,9 @@
 """Main extraction service for orchestrating scraping, storage, and export."""
 
-import re
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Protocol, Dict, Any
 
 from ..core.models import (
     Platform,
@@ -13,34 +12,41 @@ from ..core.models import (
     ClientConfig,
     SocialAccount,
 )
-from ..core.exceptions import ExtractionError, ConfigurationError
+from ..core.exceptions import ExtractionError, ConfigurationError, ValidationError
 from ..scrapers.registry import ScraperRegistry
+from ..scrapers.base import BaseScraper
 from ..storage.sqlite import SQLiteStorage
+from ..storage.base import StorageBackend
 from ..exporters.registry import ExporterRegistry
+from ..exporters.base import BaseExporter
+from ..utils.html_debug_logger import set_debug_client
+from ..utils.output_paths import OutputPathManager
+from ..utils.security import validate_name
 
 logger = logging.getLogger(__name__)
+
+
+class ScraperFactory(Protocol):
+    """Protocol for scraper factory functions."""
+    def __call__(self, platform: str, config: Optional[dict] = None) -> BaseScraper: ...
+
+
+class ExporterFactory(Protocol):
+    """Protocol for exporter factory functions."""
+    def __call__(self, format: str) -> BaseExporter: ...
 
 # Validation constants
 MAX_POSTS_LIMIT = 10000
 MIN_POSTS_LIMIT = 1
-VALID_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
-VALID_PLATFORMS = {'facebook', 'instagram', 'twitter', 'linkedin'}
+VALID_PLATFORMS = {'facebook', 'instagram', 'twitter', 'linkedin', 'google'}
 
 
-def _validate_name(value: str, field_name: str) -> None:
-    """Validate client/account names to prevent path traversal and injection."""
-    if not value:
-        raise ConfigurationError(f"{field_name} cannot be empty")
-    if len(value) > 100:
-        raise ConfigurationError(f"{field_name} too long (max 100 characters)")
-    if not VALID_NAME_PATTERN.match(value):
-        raise ConfigurationError(
-            f"Invalid {field_name}: '{value}'. "
-            f"Only alphanumeric, underscore, hyphen, and dot allowed."
-        )
-    # Prevent path traversal
-    if '..' in value or value.startswith('/') or value.startswith('\\'):
-        raise ConfigurationError(f"Invalid characters in {field_name}: '{value}'")
+def _validate_name_wrapper(value: str, field_name: str) -> None:
+    """Wrapper for validate_name that converts ValidationError to ConfigurationError."""
+    try:
+        validate_name(value, field_name)
+    except ValidationError as e:
+        raise ConfigurationError(str(e), setting=field_name)
 
 
 class ExtractionService:
@@ -52,8 +58,11 @@ class ExtractionService:
 
     def __init__(
         self,
-        storage: Optional[SQLiteStorage] = None,
-        data_dir: str = "data"
+        storage: Optional[StorageBackend] = None,
+        data_dir: str = "data",
+        scraper_factory: Optional[ScraperFactory] = None,
+        exporter_factory: Optional[ExporterFactory] = None,
+        path_manager: Optional[OutputPathManager] = None
     ):
         """
         Initialize extraction service.
@@ -61,13 +70,27 @@ class ExtractionService:
         Args:
             storage: Storage backend (defaults to SQLite)
             data_dir: Directory for data files
+            scraper_factory: Factory for creating scrapers (defaults to ScraperRegistry.get)
+            exporter_factory: Factory for creating exporters (defaults to ExporterRegistry.get)
+            path_manager: Output path manager (created if not provided)
         """
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
+        # Storage - defaults to SQLite
         self.storage = storage or SQLiteStorage(
             db_path=str(self.data_dir / "extractor.db")
         )
+
+        # Scraper factory - defaults to registry
+        self._scraper_factory = scraper_factory or ScraperRegistry.get
+
+        # Exporter factory - defaults to registry
+        self._exporter_factory = exporter_factory or ExporterRegistry.get
+
+        # Path manager - defaults to exports directory
+        self._default_exports_dir = str(self.data_dir / "exports")
+        self._path_manager = path_manager
 
     def extract(
         self,
@@ -93,8 +116,8 @@ class ExtractionService:
             Extraction statistics
         """
         # Validate inputs
-        _validate_name(client, "client")
-        _validate_name(account_id, "account_id")
+        _validate_name_wrapper(client, "client")
+        _validate_name_wrapper(account_id, "account_id")
 
         platform_lower = platform.lower()
         if platform_lower not in VALID_PLATFORMS:
@@ -120,9 +143,12 @@ class ExtractionService:
             f"(max_posts={max_posts}, full={full})"
         )
 
+        # Set the client for HTML debug logging
+        set_debug_client(client)
+
         try:
-            # Get scraper
-            scraper = ScraperRegistry.get(platform_lower, config)
+            # Get scraper using injected factory
+            scraper = self._scraper_factory(platform_lower, config)
 
             # Determine since_date for incremental extraction
             since_date = None
@@ -133,14 +159,30 @@ class ExtractionService:
                 if since_date:
                     logger.info(f"Incremental extraction since {since_date}")
 
+            # Get set of posts that already have comments (for skipping)
+            posts_with_comments = self.storage.get_posts_with_comments_set(
+                client, platform_lower
+            )
+            if posts_with_comments:
+                logger.info(f"Found {len(posts_with_comments)} posts with existing comments (will skip)")
+
+            # Track skipped posts
+            posts_skipped = 0
+
             # Extract posts and comments
             for result in scraper.get_posts_with_comments(
-                account_id, since_date, max_posts
+                account_id, since_date, max_posts, posts_with_comments
             ):
                 stats.posts_scraped += 1
 
                 # Save post
                 self.storage.save_post(client, result.post)
+
+                # Check if this post already has comments
+                if result.post.platform_id in posts_with_comments:
+                    posts_skipped += 1
+                    logger.debug(f"Skipping post {result.post.platform_id} - already has comments")
+                    continue
 
                 # Save comments
                 stats.comments_found += len(result.comments)
@@ -150,6 +192,9 @@ class ExtractionService:
                         stats.new_comments_saved += 1
                     else:
                         stats.duplicates_skipped += 1
+
+            if posts_skipped > 0:
+                logger.info(f"Skipped {posts_skipped} posts that already had comments")
 
             # Mark as complete
             stats.completed_at = datetime.utcnow()
@@ -242,7 +287,10 @@ class ExtractionService:
         output_dir: Optional[str] = None
     ) -> str:
         """
-        Export comments to a file.
+        Export comments to a file with organized directory structure.
+
+        Output structure:
+            {base_dir}/{client}/{platform}/{YYYY-MM}/{client}_{platform}_comments_{timestamp}.{format}
 
         Args:
             client: Client name
@@ -250,7 +298,7 @@ class ExtractionService:
             platform: Filter by platform
             since: Comments after this date
             until: Comments before this date
-            output_dir: Output directory
+            output_dir: Override base output directory
 
         Returns:
             Path to exported file
@@ -266,29 +314,47 @@ class ExtractionService:
         if not comments:
             logger.warning(f"No comments found for {client}")
 
+        # Determine platforms in export
+        platforms = list(set(c.platform.value for c in comments)) if comments else []
+
         # Create metadata
         metadata = ExportMetadata(
             client=client,
             format=format,
             total_comments=len(comments),
-            platforms=list(set(c.platform.value for c in comments)),
+            platforms=platforms,
         )
 
-        # Determine output path
-        if output_dir:
-            output_path = Path(output_dir)
+        # Use OutputPathManager for organized paths
+        base_dir = output_dir or self._default_exports_dir
+        path_manager = self._path_manager or OutputPathManager(base_dir)
+
+        # Generate organized path
+        if platform:
+            # Single platform export
+            full_path = path_manager.get_export_path(
+                client=client,
+                platform=platform,
+                data_type="comments",
+                format=format
+            )
         else:
-            output_path = self.data_dir / "exports"
+            # Multi-platform export
+            full_path = path_manager.get_combined_export_path(
+                client=client,
+                data_type="comments",
+                format=format,
+                platforms=platforms if platforms else None
+            )
 
-        output_path.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists
+        path_manager.ensure_dir(full_path)
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"{client}_comments_{timestamp}.{format}"
-        full_path = str(output_path / filename)
+        logger.info(f"EXPORT | path={full_path}")
 
-        # Get exporter and export
-        exporter = ExporterRegistry.get(format)
-        return exporter.export(comments, metadata, full_path)
+        # Get exporter using injected factory
+        exporter = self._exporter_factory(format)
+        return exporter.export(comments, metadata, str(full_path))
 
     def export_posts(
         self,
@@ -300,7 +366,10 @@ class ExtractionService:
         output_dir: Optional[str] = None
     ) -> str:
         """
-        Export posts to a file.
+        Export posts to a file with organized directory structure.
+
+        Output structure:
+            {base_dir}/{client}/{platform}/{YYYY-MM}/{client}_{platform}_posts_{timestamp}.{format}
 
         Args:
             client: Client name
@@ -308,7 +377,7 @@ class ExtractionService:
             platform: Filter by platform
             since: Posts after this date
             until: Posts before this date
-            output_dir: Output directory
+            output_dir: Override base output directory
 
         Returns:
             Path to exported file
@@ -324,31 +393,49 @@ class ExtractionService:
         if not posts:
             logger.warning(f"No posts found for {client}")
 
+        # Determine platforms in export
+        platforms = list(set(p.platform.value for p in posts)) if posts else []
+
         # Create metadata
         metadata = ExportMetadata(
             client=client,
             format=format,
             total_comments=len(posts),
-            platforms=list(set(p.platform.value for p in posts)),
+            platforms=platforms,
         )
 
-        # Determine output path
-        if output_dir:
-            output_path = Path(output_dir)
+        # Use OutputPathManager for organized paths
+        base_dir = output_dir or self._default_exports_dir
+        path_manager = self._path_manager or OutputPathManager(base_dir)
+
+        # Generate organized path
+        if platform:
+            # Single platform export
+            full_path = path_manager.get_export_path(
+                client=client,
+                platform=platform,
+                data_type="posts",
+                format=format
+            )
         else:
-            output_path = self.data_dir / "exports"
+            # Multi-platform export
+            full_path = path_manager.get_combined_export_path(
+                client=client,
+                data_type="posts",
+                format=format,
+                platforms=platforms if platforms else None
+            )
 
-        output_path.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists
+        path_manager.ensure_dir(full_path)
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"{client}_posts_{timestamp}.{format}"
-        full_path = str(output_path / filename)
+        logger.info(f"EXPORT | path={full_path}")
 
-        # Get exporter and export
-        exporter = ExporterRegistry.get(format)
-        return exporter.export_posts(posts, metadata, full_path)
+        # Get exporter using injected factory
+        exporter = self._exporter_factory(format)
+        return exporter.export_posts(posts, metadata, str(full_path))
 
-    def get_stats(self, client: str) -> dict:
+    def get_stats(self, client: str) -> Dict[str, Any]:
         """
         Get statistics for a client.
 

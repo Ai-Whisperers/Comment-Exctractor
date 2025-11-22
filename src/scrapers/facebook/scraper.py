@@ -18,6 +18,9 @@ from ...core.exceptions import (
     AccountNotFoundError,
 )
 from ..base import BaseScraper
+from ..shared.browser_manager import BrowserManager, BrowserConfig
+from ..shared.rate_limiting import FacebookRateLimitDetector
+from ..shared.constants import TIMEOUTS
 from .pages import LoginPage, ProfilePage, PostPage, CommentsSection
 from .selectors import Selectors
 
@@ -48,12 +51,10 @@ class FacebookScraper(BaseScraper):
         self._password = config.get("password")
 
         # Browser settings
-        self._headless = config.get("headless", True)
+        self._headless = config.get("headless", False)
 
-        # Session
-        self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
+        # Browser manager (handles lifecycle)
+        self._browser_manager: Optional[BrowserManager] = None
         self._page: Optional[Page] = None
 
         # Page objects (initialized after browser)
@@ -62,52 +63,22 @@ class FacebookScraper(BaseScraper):
         self._post_page: Optional[PostPage] = None
         self._comments_section: Optional[CommentsSection] = None
 
+        # Rate limit detector
+        self._rate_limit_detector = FacebookRateLimitDetector()
+
         # Initialize browser
         self._init_browser()
 
-    def _init_browser(self):
-        """Initialize Playwright browser and page objects."""
-        logger.info("BROWSER INIT | platform=facebook | headless=%s", self._headless)
+    def _init_browser(self) -> None:
+        """Initialize browser using BrowserManager."""
+        browser_config = BrowserConfig(
+            headless=self._headless,
+            profile_dir=self.config.get("browser_profile"),
+            proxy=self._current_proxy,
+        )
 
-        self._playwright = sync_playwright().start()
-
-        # Check for persistent browser profile
-        browser_profile = self.config.get("browser_profile")
-
-        if browser_profile and Path(browser_profile).exists():
-            # Use persistent context with existing browser profile
-            logger.info(f"BROWSER INIT | using persistent context from {browser_profile}")
-            self._context = self._playwright.chromium.launch_persistent_context(
-                browser_profile,
-                headless=self._headless,
-                viewport={"width": 1280, "height": 800},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ],
-            )
-            self._browser = None
-            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-        else:
-            # Standard browser launch
-            self._browser = self._playwright.chromium.launch(
-                headless=self._headless,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ]
-            )
-
-            self._context = self._browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-            )
-
-            self._page = self._context.new_page()
+        self._browser_manager = BrowserManager(browser_config, "facebook")
+        self._page = self._browser_manager.page
 
         # Initialize page objects
         self._login_page = LoginPage(self._page)
@@ -115,7 +86,14 @@ class FacebookScraper(BaseScraper):
         self._post_page = PostPage(self._page)
         self._comments_section = CommentsSection(self._page)
 
-        logger.info("BROWSER INIT | complete")
+    def _check_rate_limit(self) -> bool:
+        """
+        Check if Facebook is rate limiting us.
+
+        Returns:
+            True if rate limited, False otherwise
+        """
+        return self._rate_limit_detector.is_rate_limited(self._page)
 
     def _ensure_logged_in(self):
         """Ensure user is logged in, performing login if necessary."""
@@ -177,7 +155,8 @@ class FacebookScraper(BaseScraper):
         self,
         account_id: str,
         since_date: Optional[datetime],
-        max_posts: int
+        max_posts: int,
+        known_post_ids: set = None
     ) -> Iterator[ExtractionResult]:
         """
         Scrape posts and comments from a Facebook page/profile.
@@ -186,6 +165,7 @@ class FacebookScraper(BaseScraper):
             account_id: Facebook page name or ID
             since_date: Only get posts after this date
             max_posts: Maximum number of posts to extract
+            known_post_ids: Set of post IDs that already exist (for skipping)
 
         Yields:
             ExtractionResult objects with post and comments
@@ -205,7 +185,16 @@ class FacebookScraper(BaseScraper):
 
         # Collect post links
         scroll_all = max_posts > 50
-        post_links = self._post_page.get_post_links(max_posts, scroll_all=scroll_all)
+        # Pass known_post_ids to skip existing posts
+        # Only skip existing posts if we have known_post_ids (incremental mode)
+        # If known_post_ids is empty/None, this is a full extraction
+        should_skip_existing = bool(known_post_ids)
+        post_links = self._post_page.get_post_links(
+            max_posts,
+            scroll_all=scroll_all,
+            known_post_ids=known_post_ids,
+            skip_existing=should_skip_existing
+        )
 
         if not post_links:
             logger.warning("No posts found on profile")
@@ -215,20 +204,52 @@ class FacebookScraper(BaseScraper):
 
         # Scrape each post
         posts_scraped = 0
+        posts_skipped = 0
         consecutive_failures = 0
         max_failures = 5
+        known_post_ids = known_post_ids or set()
 
         for post_url in post_links:
             if posts_scraped >= max_posts:
                 break
 
+            # Navigate with retry logic
+            nav_success = False
+            for attempt in range(3):
+                try:
+                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+                    self._page.wait_for_timeout(1500)
+                    nav_success = True
+                    break
+                except Exception as nav_error:
+                    logger.warning(f"Navigation attempt {attempt + 1}/3 failed for {post_url[:60]}...: {nav_error}")
+                    if attempt < 2:
+                        self._page.wait_for_timeout(2000)  # Wait before retry
+
+            if not nav_success:
+                logger.warning(f"Failed to navigate to post after 3 attempts: {post_url[:60]}...")
+                consecutive_failures += 1
+                continue
+
+            # Check for rate limiting after navigation
+            if self._check_rate_limit():
+                logger.warning("Rate limit detected, waiting 60 seconds before retry...")
+                self._page.wait_for_timeout(60000)
+                # Try once more after waiting
+                if self._check_rate_limit():
+                    logger.error("Still rate limited after waiting, stopping extraction")
+                    break
+
             try:
-                # Navigate to post
-                self._page.goto(post_url, wait_until="domcontentloaded")
-                self._page.wait_for_timeout(2000)
 
                 # Extract post data
                 post_data = self._post_page.extract_post_data(account_id)
+
+                # Skip if post already exists in database
+                if post_data["id"] in known_post_ids:
+                    posts_skipped += 1
+                    logger.debug(f"Skipping existing post: {post_data['id']}")
+                    continue
 
                 # Create Post object
                 post = Post(
@@ -282,28 +303,12 @@ class FacebookScraper(BaseScraper):
 
         logger.info(
             f"EXTRACTION COMPLETE | account={account_id} | "
-            f"posts={posts_scraped}"
+            f"posts={posts_scraped} | skipped={posts_skipped}"
         )
 
-    def close(self):
+    def close(self) -> None:
         """Clean up browser resources."""
-        try:
-            if self._page:
-                self._page.close()
-            if self._context:
-                self._context.close()
-            if self._browser:
-                self._browser.close()
-            if self._playwright:
-                self._playwright.stop()
-
-            logger.info("BROWSER SHUTDOWN | complete")
-        except Exception as e:
-            logger.warning(f"Error during cleanup: {e}")
-
-    def __del__(self):
-        """Cleanup on deletion."""
-        try:
-            self.close()
-        except Exception:
-            pass
+        if self._browser_manager:
+            self._browser_manager.close()
+            self._browser_manager = None
+        super().close()

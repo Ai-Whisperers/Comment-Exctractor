@@ -3,11 +3,12 @@
 import logging
 import random
 import re
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from playwright.sync_api import Page, Locator, TimeoutError as PlaywrightTimeout, Error as PlaywrightError
 
 from .constants import TIMEOUTS
+from ...utils.html_debug_logger import HTMLDebugLogger, get_debug_logger
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,16 @@ class BasePage:
     def __init__(self, page: Page):
         self.page = page
 
-    def navigate(self, url: str, wait_until: str = "networkidle") -> "BasePage":
-        """Navigate to a URL."""
+    def navigate(self, url: str, wait_until: str = "networkidle", timeout: int = 60000) -> "BasePage":
+        """Navigate to a URL.
+
+        Args:
+            url: URL to navigate to
+            wait_until: When to consider navigation complete
+            timeout: Navigation timeout in milliseconds (default: 60000)
+        """
         logger.debug(f"NAVIGATE | url={url}")
-        self.page.goto(url, wait_until=wait_until)
+        self.page.goto(url, wait_until=wait_until, timeout=timeout)
         return self
 
     def wait(self, ms: int) -> "BasePage":
@@ -249,7 +256,12 @@ class BasePage:
     @staticmethod
     def parse_count(text: str) -> int:
         """
-        Parse a count string like '1.5K', '2M', or '1B' into an integer.
+        Parse a count string like '1.5K', '2M', '1B', or Spanish formats into an integer.
+
+        Supports:
+        - English: 1.5K, 2M, 1B
+        - Spanish: 8,5 mil, 1,2 millones, 500 mil
+        - Plain numbers: 1,234 or 1.234
 
         Args:
             text: Count string
@@ -262,13 +274,69 @@ class BasePage:
 
         text = text.strip().lower()
 
-        # Extract number and suffix
-        match = re.search(r'([\d,.]+)\s*([kmb])?', text, re.IGNORECASE)
-        if not match:
-            return 0
+        # Handle Spanish word multipliers first
+        # "mil" = thousands, "millon/millones" = millions
+        if 'millon' in text or 'mill' in text:
+            # Extract number before "millon/millones"
+            match = re.search(r'([\d,.]+)', text)
+            if match:
+                # Spanish uses comma as decimal separator
+                number_str = match.group(1).replace('.', '').replace(',', '.')
+                try:
+                    return int(float(number_str) * 1000000)
+                except (ValueError, TypeError):
+                    return 0
 
-        number_str = match.group(1).replace(',', '')
-        suffix = match.group(2)
+        if ' mil' in text or text.endswith('mil'):
+            # Extract number before "mil"
+            match = re.search(r'([\d,.]+)', text)
+            if match:
+                # Spanish uses comma as decimal separator
+                number_str = match.group(1).replace('.', '').replace(',', '.')
+                try:
+                    return int(float(number_str) * 1000)
+                except (ValueError, TypeError):
+                    return 0
+
+        # Extract number and suffix for English format (K, M, B)
+        # Suffix must be:
+        # 1. Followed by whitespace or non-alphanumeric (to avoid "7b09" -> 7B)
+        # 2. The number must look like a social media count (not embedded in garbage text)
+        # 3. Prefer numbers that appear early in the text (more likely to be the actual count)
+
+        # First, try to find a clean number with optional K/M/B suffix
+        # Pattern: number optionally followed by K/M/B, then word boundary or non-letter
+        match = re.search(r'\b([\d,.]+)\s*([kmb])\b', text, re.IGNORECASE)
+        if match:
+            number_str = match.group(1)
+            suffix = match.group(2)
+        else:
+            # Try without suffix - look for clean number at word boundary
+            match = re.search(r'\b([\d,.]+)\b', text)
+            if not match:
+                # Last resort: any number
+                match = re.search(r'([\d,.]+)', text)
+                if not match:
+                    return 0
+            number_str = match.group(1)
+            suffix = None
+
+        # Determine decimal separator based on format
+        # If string has both . and , check which comes last (that's the decimal)
+        if '.' in number_str and ',' in number_str:
+            # European format: 1.234,56 -> comma is decimal
+            if number_str.rfind(',') > number_str.rfind('.'):
+                number_str = number_str.replace('.', '').replace(',', '.')
+            else:
+                # US format: 1,234.56 -> period is decimal
+                number_str = number_str.replace(',', '')
+        elif ',' in number_str:
+            # Could be Spanish decimal (8,5) or US thousands (1,000)
+            # If comma is followed by 1-2 digits at end, it's decimal
+            if re.search(r',\d{1,2}$', number_str):
+                number_str = number_str.replace(',', '.')
+            else:
+                number_str = number_str.replace(',', '')
 
         try:
             number = float(number_str)
@@ -287,3 +355,144 @@ class BasePage:
 
         except (ValueError, TypeError):
             return 0
+
+    # HTML Debug Logging Methods
+    # These methods allow pages to save HTML snapshots when issues occur
+
+    def _get_debug_logger(self) -> HTMLDebugLogger:
+        """Get the HTML debug logger instance."""
+        return get_debug_logger()
+
+    def _get_platform_name(self) -> str:
+        """
+        Get the platform name from the class hierarchy.
+        Override in subclasses if needed.
+        """
+        # Try to determine platform from class name or module
+        class_name = self.__class__.__name__.lower()
+        module_name = self.__class__.__module__.lower()
+
+        for platform in ['instagram', 'facebook', 'twitter', 'linkedin']:
+            if platform in module_name or platform in class_name:
+                return platform
+
+        return "unknown"
+
+    def _get_page_type(self) -> str:
+        """
+        Get the page type from the class name.
+        Override in subclasses if needed.
+        """
+        class_name = self.__class__.__name__.lower()
+
+        if 'login' in class_name:
+            return HTMLDebugLogger.PAGE_LOGIN
+        elif 'profile' in class_name:
+            return HTMLDebugLogger.PAGE_PROFILE
+        elif 'comment' in class_name:
+            return HTMLDebugLogger.PAGE_COMMENTS
+        elif 'post' in class_name or 'modal' in class_name:
+            return HTMLDebugLogger.PAGE_POST
+        elif 'home' in class_name:
+            return HTMLDebugLogger.PAGE_HOME
+        else:
+            return HTMLDebugLogger.PAGE_UNKNOWN
+
+    def save_debug_html(
+        self,
+        reason: str,
+        context: str = "",
+        page_type: Optional[str] = None,
+        additional_info: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Save HTML snapshot for debugging.
+
+        Args:
+            reason: Why this dump was triggered
+            context: Additional context (e.g., post_id, username)
+            page_type: Override auto-detected page type
+            additional_info: Any additional debug information
+
+        Returns:
+            Path to saved file
+        """
+        return self._get_debug_logger().save_debug_html(
+            page=self.page,
+            page_type=page_type or self._get_page_type(),
+            reason=reason,
+            context=context,
+            platform=self._get_platform_name(),
+            additional_info=additional_info
+        )
+
+    def save_on_error(self, error: Exception, context: str = "") -> str:
+        """
+        Save HTML when an error occurs.
+
+        Args:
+            error: The exception that occurred
+            context: Additional context
+
+        Returns:
+            Path to saved file
+        """
+        return self._get_debug_logger().save_on_error(
+            page=self.page,
+            page_type=self._get_page_type(),
+            error=error,
+            context=context,
+            platform=self._get_platform_name()
+        )
+
+    def save_on_unexpected(
+        self,
+        expected: str,
+        actual: str,
+        context: str = ""
+    ) -> str:
+        """
+        Save HTML when something unexpected happens.
+
+        Args:
+            expected: What was expected
+            actual: What actually happened
+            context: Additional context
+
+        Returns:
+            Path to saved file
+        """
+        return self._get_debug_logger().save_on_unexpected(
+            page=self.page,
+            page_type=self._get_page_type(),
+            expected=expected,
+            actual=actual,
+            context=context,
+            platform=self._get_platform_name()
+        )
+
+    def save_on_timeout(
+        self,
+        waiting_for: str,
+        timeout_ms: int,
+        context: str = ""
+    ) -> str:
+        """
+        Save HTML when a timeout occurs.
+
+        Args:
+            waiting_for: What we were waiting for
+            timeout_ms: Timeout in milliseconds
+            context: Additional context
+
+        Returns:
+            Path to saved file
+        """
+        return self._get_debug_logger().save_on_timeout(
+            page=self.page,
+            page_type=self._get_page_type(),
+            waiting_for=waiting_for,
+            timeout_ms=timeout_ms,
+            context=context,
+            platform=self._get_platform_name()
+        )

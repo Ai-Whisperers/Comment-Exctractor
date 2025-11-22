@@ -12,7 +12,7 @@ class Platform(str, Enum):
     INSTAGRAM = "instagram"
     TWITTER = "twitter"
     LINKEDIN = "linkedin"
-    TIKTOK = "tiktok"
+    GOOGLE = "google"  # Google Reviews / Google Business
 
 
 class Author(BaseModel):

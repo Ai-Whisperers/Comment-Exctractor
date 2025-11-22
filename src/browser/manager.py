@@ -21,7 +21,7 @@ class BrowserManager:
 
     def __init__(
         self,
-        headless: bool = True,
+        headless: bool = False,
         viewport_width: int = None,
         viewport_height: int = None,
         user_agent: str = None,
@@ -30,7 +30,7 @@ class BrowserManager:
         Initialize browser manager.
 
         Args:
-            headless: Run browser in headless mode
+            headless: Run browser in headless mode (default False for reliable scraping)
             viewport_width: Browser viewport width
             viewport_height: Browser viewport height
             user_agent: Custom user agent string

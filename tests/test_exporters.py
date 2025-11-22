@@ -20,6 +20,7 @@ from src.exporters import (
     CSVExporter,
     JSONLExporter,
     ExporterRegistry,
+    ExportOptions,
 )
 from src.core.exceptions import ConfigurationError
 
@@ -253,7 +254,9 @@ class TestCSVExporter(ExporterTestMixin):
     def test_export_comments(self):
         """Test exporting comments to CSV."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            exporter = CSVExporter()
+            # Use flatten_author=True for CSV backward compatibility
+            options = ExportOptions(flatten_author=True)
+            exporter = CSVExporter(options)
             comments = [self.create_test_comment()]
             metadata = self.create_test_metadata()
 
@@ -298,7 +301,9 @@ class TestCSVExporter(ExporterTestMixin):
     def test_csv_has_correct_headers(self):
         """Test that CSV has all expected headers."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            exporter = CSVExporter()
+            # Use flatten_author=True for CSV backward compatibility
+            options = ExportOptions(flatten_author=True)
+            exporter = CSVExporter(options)
             comments = [self.create_test_comment()]
             metadata = self.create_test_metadata()
 

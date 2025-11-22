@@ -11,8 +11,35 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..utils.security import SensitiveFilter
 from ..core.exceptions import ConfigurationError
+from .paths import get_paths
 
 logger = logging.getLogger(__name__)
+
+
+# Validation constants
+MIN_REQUESTS_PER_MINUTE = 1
+MAX_REQUESTS_PER_MINUTE = 100
+MIN_RETRIES = 0
+MAX_RETRIES = 10
+MIN_TIMEOUT_SECONDS = 1
+MAX_TIMEOUT_SECONDS = 300
+
+
+class BrowserSettings(BaseModel):
+    """Browser automation settings."""
+    headless: bool = False
+    viewport_width: int = Field(default=1280, ge=320, le=3840)
+    viewport_height: int = Field(default=800, ge=480, le=2160)
+    timeout_seconds: int = Field(default=30, ge=MIN_TIMEOUT_SECONDS, le=MAX_TIMEOUT_SECONDS)
+    user_agent: Optional[str] = None
+
+    @field_validator('user_agent')
+    @classmethod
+    def validate_user_agent(cls, v: Optional[str]) -> Optional[str]:
+        """Validate user agent string."""
+        if v is not None and len(v) > 500:
+            raise ValueError("User agent string too long (max 500 characters)")
+        return v
 
 
 class ProxySettings(BaseModel):
@@ -34,9 +61,19 @@ class ProxySettings(BaseModel):
 class ScraperSettings(BaseModel):
     """Settings for a specific scraper."""
     enabled: bool = True
-    requests_per_minute: int = 30
-    max_retries: int = 3
+    requests_per_minute: int = Field(default=30, ge=MIN_REQUESTS_PER_MINUTE, le=MAX_REQUESTS_PER_MINUTE)
+    max_retries: int = Field(default=3, ge=MIN_RETRIES, le=MAX_RETRIES)
     proxies: ProxySettings = Field(default_factory=ProxySettings)
+    browser: BrowserSettings = Field(default_factory=BrowserSettings)
+    request_timeout: int = Field(default=30, ge=MIN_TIMEOUT_SECONDS, le=MAX_TIMEOUT_SECONDS)
+
+    @model_validator(mode='after')
+    def validate_scraper_settings(self) -> 'ScraperSettings':
+        """Cross-validate scraper settings."""
+        # Proxy validation: if proxies enabled, must have at least one URL
+        if self.proxies.enabled and len(self.proxies.urls) == 0:
+            raise ValueError("Proxies are enabled but no proxy URLs configured")
+        return self
 
 
 class FacebookSettings(ScraperSettings):
@@ -44,7 +81,33 @@ class FacebookSettings(ScraperSettings):
     email: Optional[str] = None
     password: Optional[str] = None
     cookies_file: Optional[str] = None
-    pages_per_request: int = 10
+    pages_per_request: int = Field(default=10, ge=1, le=50)
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        """Basic email validation."""
+        if v is not None and v != "":
+            if '@' not in v or '.' not in v.split('@')[-1]:
+                raise ValueError("Invalid email format")
+        return v
+
+    @field_validator('cookies_file')
+    @classmethod
+    def validate_cookies_file(cls, v: Optional[str]) -> Optional[str]:
+        """Validate cookies file path has no traversal."""
+        if v is not None and '..' in v:
+            raise ValueError("Cookies file path cannot contain path traversal '..'")
+        return v
+
+    @model_validator(mode='after')
+    def validate_facebook_auth(self) -> 'FacebookSettings':
+        """Validate Facebook authentication configuration."""
+        if self.enabled:
+            has_creds = self.email and self.password
+            has_cookies = self.cookies_file is not None
+            # It's okay if neither are set - will use browser profile
+        return self
 
 
 class InstagramSettings(ScraperSettings):
@@ -52,21 +115,74 @@ class InstagramSettings(ScraperSettings):
     username: Optional[str] = None
     password: Optional[str] = None
     session_file: Optional[str] = None
-    requests_per_minute: int = 15
+    requests_per_minute: int = Field(default=15, ge=MIN_REQUESTS_PER_MINUTE, le=MAX_REQUESTS_PER_MINUTE)
+
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+        """Validate Instagram username format."""
+        if v is not None and v != "":
+            # Instagram usernames: alphanumeric, underscores, periods, max 30 chars
+            if len(v) > 30:
+                raise ValueError("Instagram username cannot exceed 30 characters")
+            import re
+            if not re.match(r'^[a-zA-Z0-9_.]+$', v):
+                raise ValueError("Instagram username can only contain letters, numbers, underscores, and periods")
+        return v
+
+    @field_validator('session_file')
+    @classmethod
+    def validate_session_file(cls, v: Optional[str]) -> Optional[str]:
+        """Validate session file path has no traversal."""
+        if v is not None and '..' in v:
+            raise ValueError("Session file path cannot contain path traversal '..'")
+        return v
 
 
 class TwitterSettings(ScraperSettings):
     """Twitter-specific settings."""
     username: Optional[str] = None
     password: Optional[str] = None
-    requests_per_minute: int = 20
+    # Google OAuth credentials (alternative to Twitter credentials)
+    google_email: Optional[str] = None
+    google_password: Optional[str] = None
+    use_google_auth: bool = False
+    requests_per_minute: int = Field(default=20, ge=MIN_REQUESTS_PER_MINUTE, le=MAX_REQUESTS_PER_MINUTE)
+
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+        """Validate Twitter username format."""
+        if v is not None and v != "":
+            # Twitter handles: max 15 chars
+            if len(v) > 15:
+                raise ValueError("Twitter username cannot exceed 15 characters")
+        return v
+
+    @field_validator('google_email')
+    @classmethod
+    def validate_google_email(cls, v: Optional[str]) -> Optional[str]:
+        """Basic email validation for Google account."""
+        if v is not None and v != "":
+            if '@' not in v or '.' not in v.split('@')[-1]:
+                raise ValueError("Invalid Google email format")
+        return v
 
 
 class LinkedInSettings(ScraperSettings):
     """LinkedIn-specific settings."""
     email: Optional[str] = None
     password: Optional[str] = None
-    requests_per_minute: int = 10
+    requests_per_minute: int = Field(default=10, ge=MIN_REQUESTS_PER_MINUTE, le=MAX_REQUESTS_PER_MINUTE)
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        """Basic email validation."""
+        if v is not None and v != "":
+            if '@' not in v or '.' not in v.split('@')[-1]:
+                raise ValueError("Invalid email format")
+        return v
 
 
 
@@ -79,13 +195,25 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    # Paths
+    # Paths - now use centralized path config
+    @property
+    def _path_config(self):
+        return get_paths()
+
     data_dir: str = "data"
     exports_dir: str = "data/exports"
     logs_dir: str = "logs"
 
     # Database
     database_path: str = "data/extractor.db"
+
+    def get_database_path(self) -> str:
+        """Get database path from centralized config."""
+        return str(self._path_config.database_path)
+
+    def get_exports_dir(self) -> str:
+        """Get exports directory from centralized config."""
+        return str(self._path_config.exports_dir)
 
     # Extraction defaults
     default_max_posts: int = 100
@@ -131,6 +259,27 @@ class Settings(BaseSettings):
         if v > 10000:
             raise ValueError("default_max_posts cannot exceed 10000")
         return v
+
+    @field_validator('data_dir', 'exports_dir', 'logs_dir', 'database_path')
+    @classmethod
+    def validate_paths(cls, v: str) -> str:
+        """Validate paths don't contain traversal."""
+        if '..' in v:
+            raise ValueError(f"Path cannot contain path traversal '..': {v}")
+        return v
+
+    @model_validator(mode='after')
+    def validate_settings(self) -> 'Settings':
+        """Cross-validate all settings."""
+        # Ensure exports_dir is under data_dir or a valid path
+        exports_path = Path(self.exports_dir)
+        data_path = Path(self.data_dir)
+
+        # Ensure database_path ends with .db
+        if not self.database_path.endswith('.db'):
+            logger.warning(f"Database path '{self.database_path}' should end with .db extension")
+
+        return self
 
     def validate_platform_config(self, platform: str) -> List[str]:
         """
@@ -206,12 +355,16 @@ class Settings(BaseSettings):
         """
         platform_lower = platform.lower()
 
+        paths = get_paths()
+
         if platform_lower == "facebook":
             config = {
                 "cookies": self.facebook.cookies_file,
                 "pages": self.facebook.pages_per_request,
                 "email": self.facebook.email,
                 "password": self.facebook.password,
+                "browser_profile": str(paths.browser_profile_path("facebook")),
+                "headless": False,
             }
             # Add proxies if enabled
             if self.facebook.proxies.enabled:
@@ -234,9 +387,14 @@ class Settings(BaseSettings):
                     "username": self.twitter.username,
                     "password": self.twitter.password,
                 },
+                "google_auth": {
+                    "enabled": self.twitter.use_google_auth,
+                    "email": self.twitter.google_email,
+                    "password": self.twitter.google_password,
+                },
                 "browser": {
                     "headless": False,
-                    "profile_dir": "./data/browser_profiles/twitter",
+                    "profile_dir": str(paths.browser_profile_path("twitter")),
                 }
             }
             if self.twitter.proxies.enabled:
@@ -251,7 +409,7 @@ class Settings(BaseSettings):
                 },
                 "browser": {
                     "headless": False,
-                    "profile_dir": "./data/browser_profiles/linkedin",
+                    "profile_dir": str(paths.browser_profile_path("linkedin")),
                 }
             }
             if self.linkedin.proxies.enabled:

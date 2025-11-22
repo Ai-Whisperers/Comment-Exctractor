@@ -72,10 +72,13 @@ class Selectors:
         POST_FEED_UNIT = "div[data-pagelet*='FeedUnit']"
         POST_LINK = "a[href*='/posts/']"
 
-        # Post metrics
-        REACTIONS_COUNT = "span:has-text(' reactions')"
-        COMMENTS_COUNT = "span:has-text(' comment')"
-        SHARES_COUNT = "span:has-text(' share')"
+        # Post metrics - support English and Spanish
+        # Reactions: Facebook shows "Todas las reacciones: N N" or "X reactions"
+        REACTIONS_COUNT = "span:has-text('reacciones'), span:has-text('reactions'), span[aria-label*='reaction']"
+        # Comments: "X comments", "X comentarios"
+        COMMENTS_COUNT = "span:has-text('comentarios'), span:has-text('comments')"
+        # Shares: "X shares", "X veces compartida", "X vez compartido"
+        SHARES_COUNT = "span:has-text('veces compartid'), span:has-text('vez compartid'), span:has-text('shares')"
         POST_TIME = "a[href*='/posts/'] span"
 
         # Media
@@ -87,10 +90,10 @@ class Selectors:
     # =========================================================================
     class Comments:
         """Comments section selectors."""
-        # Load more
-        VIEW_MORE_COMMENTS = "span:has-text('View more comments')"
-        VIEW_PREVIOUS = "span:has-text('View previous')"
-        LOAD_MORE_REPLIES = "span:has-text('View')"
+        # Load more - English and Spanish
+        VIEW_MORE_COMMENTS = "span:has-text('View more comments'), span:has-text('Ver más comentarios')"
+        VIEW_PREVIOUS = "span:has-text('View previous'), span:has-text('Ver anteriores')"
+        LOAD_MORE_REPLIES = "span:has-text('View'), span:has-text('Ver')"
 
         # Comment containers
         COMMENT_CONTAINER = "div[aria-label*='Comment']"

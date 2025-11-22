@@ -9,6 +9,10 @@ playwright>=1.40.0
 # Database
 # SQLite is built-in, no additional packages needed
 
+# Security - encrypted credential storage
+cryptography>=41.0.0
+keyring>=24.0.0  # Optional: OS-level secure storage
+
 # Optional: Excel export
 # openpyxl>=3.1.0
 

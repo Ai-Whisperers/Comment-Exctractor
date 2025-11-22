@@ -1,464 +1,673 @@
 # Data Models & Schemas
 
+## Overview
+
+All data models are defined using Pydantic v2 in `src/core/models.py`. Models use `ConfigDict(extra="allow")` to preserve platform-specific fields in `raw_data`.
+
 ## Core Data Models
 
-### 1. Company
+### 1. Platform (Enum)
 
 ```python
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-
-class Company(BaseModel):
-    id: Optional[int] = None
-    name: str
-    industry: Optional[str] = None
-    country: Optional[str] = None
-    created_at: datetime = datetime.utcnow()
-
-    # Social media accounts
-    social_accounts: List['SocialAccount'] = []
-
-class SocialAccount(BaseModel):
-    id: Optional[int] = None
-    company_id: int
-    platform: str  # facebook, instagram, twitter, linkedin, tiktok
-    account_id: str  # Platform-specific ID
-    username: str
-    display_name: Optional[str] = None
-    profile_url: str
-    followers: Optional[int] = None
-    verified: bool = False
-    profile_picture_url: Optional[str] = None
+class Platform(str, Enum):
+    """Supported social media platforms."""
+    FACEBOOK = "facebook"
+    INSTAGRAM = "instagram"
+    TWITTER = "twitter"
+    LINKEDIN = "linkedin"
+    TIKTOK = "tiktok"
 ```
 
-### 2. Post
+### 2. Author
+
+Represents the author of a comment or post.
 
 ```python
-from typing import Dict, Any
-from enum import Enum
+class Author(BaseModel):
+    """Comment author information."""
+    model_config = ConfigDict(extra="allow")
 
-class MediaType(str, Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    VIDEO = "video"
-    CAROUSEL = "carousel"
-    REEL = "reel"
-    STORY = "story"
-    LINK = "link"
+    platform_id: Optional[str] = None      # Platform-specific user ID
+    username: Optional[str] = None         # @handle or username
+    display_name: Optional[str] = None     # Full name
+    profile_url: Optional[str] = None      # Link to profile
+    profile_image: Optional[str] = None    # Avatar URL
+    is_verified: bool = False              # Blue checkmark
+    followers_count: Optional[int] = None  # Number of followers
+```
 
+### 3. Post
+
+Represents a social media post.
+
+```python
 class Post(BaseModel):
-    id: Optional[int] = None
-    platform: str
-    platform_id: str  # Original ID from platform
+    """Social media post."""
+    model_config = ConfigDict(extra="allow")
+
+    # Identification
+    platform: Platform                     # Which platform
+    platform_id: str                       # Platform's unique ID
+    account_id: str                        # Account username/ID
+    url: Optional[str] = None              # Direct link to post
 
     # Content
-    text: Optional[str] = None
-    media_type: MediaType = MediaType.TEXT
-    media_urls: List[str] = []
+    text: Optional[str] = None             # Post text/caption
+    media_type: Optional[str] = None       # text, image, video, carousel
+    media_urls: List[str] = Field(default_factory=list)
 
-    # Metadata
-    author_id: str
-    published_at: datetime
-    url: str
+    # Timestamps
+    published_at: Optional[datetime] = None
 
     # Engagement metrics
     likes: int = 0
     comments_count: int = 0
     shares: int = 0
-    views: Optional[int] = None
 
-    # Reactions breakdown (Facebook)
-    reactions: Dict[str, int] = {}  # {like: 100, love: 50, ...}
-
-    # Raw data for platform-specific fields
-    raw_data: Dict[str, Any] = {}
-
-    class Config:
-        use_enum_values = True
+    # Platform-specific data
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
 ```
 
-### 3. Comment (Unified)
+### 4. Comment
+
+Represents a comment on a post. Includes text validation.
 
 ```python
 class Comment(BaseModel):
-    id: Optional[int] = None
-    platform: str
-    platform_id: str  # Original ID from platform
-    post_id: int  # Reference to Post
+    """Social media comment."""
+    model_config = ConfigDict(extra="allow")
+
+    # Identification
+    platform: Platform
+    platform_id: str                       # Platform's unique comment ID
+    post_id: str                           # Parent post ID
 
     # Content
-    text: str
-    media_url: Optional[str] = None  # If comment has attachment
+    text: str                              # Comment text (validated)
 
     # Author
-    author_id: str
-    author_username: str
-    author_name: Optional[str] = None
-    author_verified: bool = False
-    author_profile_url: Optional[str] = None
+    author: Author                         # Who wrote it
 
-    # Threading
-    parent_id: Optional[int] = None  # For nested replies
-    is_reply: bool = False
-
-    # Metadata
-    published_at: datetime
+    # Timestamps
+    published_at: Optional[datetime] = None
 
     # Engagement
     likes: int = 0
     replies_count: int = 0
 
-    # Analysis results (populated after processing)
-    sentiment: Optional['SentimentResult'] = None
-    cluster_id: Optional[int] = None
-    is_duplicate: bool = False
-    duplicate_of: Optional[int] = None
+    # Threading
+    parent_id: Optional[str] = None        # For nested replies
 
-    # Raw data
-    raw_data: Dict[str, Any] = {}
+    # Reserved for AI analyzer
+    sentiment_score: Optional[float] = None
+
+    # Platform-specific data
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("text")
+    @classmethod
+    def clean_text(cls, v: str) -> str:
+        """Clean and normalize comment text."""
+        if v:
+            # Remove null characters and normalize whitespace
+            v = v.replace("\x00", "").strip()
+        return v
 ```
 
-### 4. Commenter Profile
+### 5. Profile
+
+Represents a social media account/page profile.
 
 ```python
-class CommenterProfile(BaseModel):
-    id: Optional[int] = None
+class Profile(BaseModel):
+    """Social media profile/page information."""
+    model_config = ConfigDict(extra="allow")
 
-    # Identity (may have multiple per platform)
-    platform_profiles: List['PlatformProfile'] = []
+    # Identification
+    platform: Platform
+    platform_id: str                       # Platform's unique ID
+    username: str                          # @handle
+    display_name: Optional[str] = None     # Full name
+    description: Optional[str] = None      # Bio
+    url: Optional[str] = None              # Profile URL
 
-    # Aggregate metrics
-    total_comments: int = 0
-    total_likes_received: int = 0
-    avg_likes_per_comment: float = 0.0
+    # Images
+    profile_image: Optional[str] = None
+    cover_image: Optional[str] = None
 
-    # Behavior
-    first_seen: datetime
-    last_seen: datetime
-    platforms_active: List[str] = []
-
-    # Classification
-    classification: str  # super_fan, frequent_positive, etc.
-    influence_score: float = 0.0
-
-    # Sentiment profile
-    positive_ratio: float = 0.0
-    negative_ratio: float = 0.0
-    neutral_ratio: float = 0.0
-
-    # Topics/issues
-    primary_topics: List[str] = []
-    primary_issues: List[str] = []
-
-class PlatformProfile(BaseModel):
-    platform: str
-    user_id: str
-    username: str
-    display_name: Optional[str] = None
-    profile_url: str
-    verified: bool = False
-    followers: Optional[int] = None
-```
-
-## Analysis Result Models
-
-### 5. Sentiment Analysis
-
-```python
-class SentimentResult(BaseModel):
-    comment_id: int
-    label: str  # POS, NEG, NEU
-    positive_score: float
-    negative_score: float
-    neutral_score: float
-    confidence: float
-
-    # Extended analysis
-    emotions: Optional[Dict[str, float]] = None  # {joy: 0.8, anger: 0.1, ...}
-    aspects: Optional[List[str]] = None  # Topics mentioned
-    irony_detected: bool = False
-
-class SentimentSummary(BaseModel):
-    total_analyzed: int
-    distribution: Dict[str, int]  # {positive: 100, negative: 50, neutral: 30}
-    percentages: Dict[str, float]
-    avg_confidence: float
-    emotion_distribution: Optional[Dict[str, int]] = None
-```
-
-### 6. Comment Cluster
-
-```python
-class CommentCluster(BaseModel):
-    id: int
-    theme: str  # Human-readable theme
-    representative_text: str  # Best example
-
-    # Members
-    comment_ids: List[int]
-    count: int
-    percentage_of_total: float
-
-    # Aggregates
-    sentiment: str
-    avg_sentiment_score: float
-    unique_authors: int
-
-    # Keywords
-    keywords: List[str]
-    sample_comments: List[str]
-
-    # Distribution
-    platform_breakdown: Dict[str, int]  # {facebook: 100, instagram: 50}
-    time_distribution: Dict[str, int]  # {2024-01-01: 10, 2024-01-02: 15}
-
-    # Geographic (if detected)
-    locations_mentioned: List[str] = []
-```
-
-### 7. Analysis Run
-
-```python
-class AnalysisRun(BaseModel):
-    id: Optional[int] = None
-    company_id: int
-
-    # Scope
-    platforms: List[str]
-    date_range_start: datetime
-    date_range_end: datetime
+    # Metrics
+    followers_count: int = 0
+    following_count: int = 0
+    posts_count: int = 0
 
     # Status
-    status: str  # pending, running, completed, failed
-    started_at: Optional[datetime] = None
+    is_verified: bool = False
+    created_at: Optional[datetime] = None
+
+    # Platform-specific data
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+```
+
+### 6. ExtractionResult
+
+Container for a post and its comments (yielded by scrapers).
+
+```python
+class ExtractionResult(BaseModel):
+    """Result of extracting a single post with its comments."""
+    post: Post
+    comments: List[Comment] = Field(default_factory=list)
+```
+
+### 7. ExtractionStats
+
+Statistics for tracking extraction progress.
+
+```python
+class ExtractionStats(BaseModel):
+    """Statistics for an extraction job."""
+
+    # Context
+    client: str
+    platform: str
+    account: str
+
+    # Counters
+    posts_scraped: int = 0
+    comments_found: int = 0
+    new_comments_saved: int = 0
+    duplicates_skipped: int = 0
+    errors: List[str] = Field(default_factory=list)
+
+    # Timing
+    started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
+    error: Optional[str] = None
 
-    # Counts
-    total_posts: int = 0
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Get extraction duration in seconds."""
+        if self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None
+
+    @property
+    def is_success(self) -> bool:
+        """Check if extraction was successful."""
+        return self.error is None
+```
+
+## Configuration Models
+
+### 8. SocialAccount
+
+Configuration for a social media account to scrape.
+
+```python
+class SocialAccount(BaseModel):
+    """Social media account configuration for a client."""
+    platform: Platform
+    identifier: str           # username, page ID, or URL
+    display_name: Optional[str] = None
+    enabled: bool = True
+```
+
+### 9. ClientConfig
+
+Client with multiple social accounts.
+
+```python
+class ClientConfig(BaseModel):
+    """Client configuration with social accounts."""
+    name: str
+    accounts: List[SocialAccount] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+    def get_accounts_by_platform(self, platform: Platform) -> List[SocialAccount]:
+        """Get all accounts for a specific platform."""
+        return [a for a in self.accounts if a.platform == platform and a.enabled]
+```
+
+### 10. ExportMetadata
+
+Metadata included in exported files.
+
+```python
+class ExportMetadata(BaseModel):
+    """Metadata for exported data."""
+    client: str
+    exported_at: datetime = Field(default_factory=datetime.utcnow)
+    format: str                            # json, csv, excel
     total_comments: int = 0
-    unique_commenters: int = 0
-
-    # Results
-    sentiment_summary: Optional[SentimentSummary] = None
-    clusters: List[CommentCluster] = []
-    top_commenters: List[CommenterProfile] = []
-
-    # Generated outputs
-    outputs: Dict[str, str] = {}  # {csv: "/path/to/csv", pdf: "/path/to/pdf"}
+    platforms: List[str] = Field(default_factory=list)
+    date_range: Optional[Dict[str, str]] = None
+    version: str = "1.0"
 ```
 
-## API Request/Response Models
+## Protocol Interfaces
 
-### 8. Extraction Request
+Defined in `src/core/protocols.py` using `typing.Protocol`.
+
+### ScraperProtocol
 
 ```python
-class ExtractionRequest(BaseModel):
-    company_name: str
-    platforms: List[str]
-    social_accounts: Dict[str, str]  # {facebook: "personalpy", instagram: "personalpy"}
+@runtime_checkable
+class ScraperProtocol(Protocol):
+    """Protocol for platform scrapers."""
 
-    # Optional filters
-    date_from: Optional[datetime] = None
-    date_to: Optional[datetime] = None
-    max_posts: int = 100
-    max_comments_per_post: int = 1000
+    platform: Platform
 
-class ExtractionResponse(BaseModel):
-    job_id: str
-    status: str
-    message: str
-    estimated_completion: Optional[datetime] = None
+    def get_posts_with_comments(
+        self,
+        account_id: str,
+        since_date: Optional[datetime] = None,
+        max_posts: int = 100,
+        known_post_ids: Optional[set] = None
+    ) -> Iterator[ExtractionResult]:
+        """Get posts with their comments from an account."""
+        ...
+
+    def get_profile(self, account_id: str) -> Profile:
+        """Get profile information for an account."""
+        ...
+
+    def get_comments(
+        self,
+        post_id: str,
+        max_comments: int = 1000
+    ) -> Iterator[Comment]:
+        """Get comments for a specific post."""
+        ...
+
+    def close(self) -> None:
+        """Clean up resources."""
+        ...
+
+    def __enter__(self) -> "ScraperProtocol":
+        """Context manager entry."""
+        ...
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Context manager exit with cleanup."""
+        ...
 ```
 
-### 9. Analysis Request
+### StorageProtocol
 
 ```python
-class AnalysisRequest(BaseModel):
-    job_id: str
-    analysis_types: List[str] = ["sentiment", "clustering", "commenter"]
+class StorageProtocol(Protocol):
+    """Protocol for data storage backends."""
 
-    # Clustering options
-    similarity_threshold: float = 0.8
-    min_cluster_size: int = 3
+    def save_comment(self, client: str, comment: Comment) -> bool:
+        """Save a comment (returns True if new, False if duplicate)."""
+        ...
 
-    # Sentiment options
-    include_emotions: bool = True
-    include_aspects: bool = False
+    def save_post(self, client: str, post: Post) -> bool:
+        """Save a post (returns True if new, False if duplicate)."""
+        ...
 
-class AnalysisResponse(BaseModel):
-    job_id: str
-    analysis_id: int
-    status: str
-    results_url: Optional[str] = None
+    def save_profile(self, client: str, profile: Profile) -> bool:
+        """Save a profile."""
+        ...
+
+    def get_comments(
+        self,
+        client: str,
+        platform: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        limit: Optional[int] = None
+    ) -> List[Comment]:
+        """Get comments from storage with filters."""
+        ...
+
+    def get_posts(
+        self,
+        client: str,
+        platform: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None
+    ) -> List[Post]:
+        """Get posts from storage with filters."""
+        ...
+
+    def get_last_extraction_date(
+        self,
+        client: str,
+        platform: str,
+        account_id: str
+    ) -> Optional[datetime]:
+        """Get the date of the last extraction for an account."""
+        ...
 ```
 
-### 10. Report Request
+### ExporterProtocol
 
 ```python
-class ReportRequest(BaseModel):
-    analysis_id: int
-    formats: List[str] = ["json", "csv", "pdf"]
-    include_visualizations: bool = True
+class ExporterProtocol(Protocol):
+    """Protocol for data exporters."""
 
-    # PDF report options
-    executive_summary: bool = True
-    detailed_clusters: bool = True
-    commenter_profiles: bool = True
+    format: str
 
-class ReportResponse(BaseModel):
-    analysis_id: int
-    files: Dict[str, str]  # {json: "url", csv: "url", pdf: "url"}
-    dashboard_url: Optional[str] = None
+    def export(
+        self,
+        comments: List[Comment],
+        metadata: ExportMetadata,
+        output_path: str
+    ) -> str:
+        """Export comments to a file."""
+        ...
+
+    def export_posts(
+        self,
+        posts: List[Post],
+        metadata: ExportMetadata,
+        output_path: str
+    ) -> str:
+        """Export posts to a file."""
+        ...
 ```
 
-## Transformation Schemas
+## Browser Configuration
 
-### Platform to Unified Comment
+### BrowserConfig (Dataclass)
 
 ```python
-class FacebookCommentAdapter:
-    @staticmethod
-    def to_unified(fb_data: dict, post_id: int) -> Comment:
-        return Comment(
-            platform="facebook",
-            platform_id=fb_data['id'],
-            post_id=post_id,
-            text=fb_data.get('message', ''),
-            author_id=fb_data['from']['id'],
-            author_username=fb_data['from']['name'],
-            published_at=datetime.fromisoformat(fb_data['created_time'].replace('Z', '+00:00')),
-            likes=fb_data.get('like_count', 0),
-            replies_count=fb_data.get('comment_count', 0),
-            parent_id=fb_data.get('parent', {}).get('id'),
-            raw_data=fb_data
-        )
-
-class InstagramCommentAdapter:
-    @staticmethod
-    def to_unified(ig_data: dict, post_id: int) -> Comment:
-        return Comment(
-            platform="instagram",
-            platform_id=ig_data['id'],
-            post_id=post_id,
-            text=ig_data['text'],
-            author_id=ig_data.get('user_id', ig_data.get('owner_id', '')),
-            author_username=ig_data.get('username', ''),
-            published_at=datetime.fromisoformat(ig_data['timestamp'].replace('Z', '+00:00')),
-            likes=ig_data.get('like_count', 0),
-            replies_count=ig_data.get('reply_count', 0),
-            raw_data=ig_data
-        )
-
-class TwitterCommentAdapter:
-    @staticmethod
-    def to_unified(tw_data: dict, post_id: int) -> Comment:
-        return Comment(
-            platform="twitter",
-            platform_id=tw_data['id'],
-            post_id=post_id,
-            text=tw_data['text'],
-            author_id=tw_data['author_id'],
-            author_username=tw_data.get('author', {}).get('username', ''),
-            published_at=datetime.fromisoformat(tw_data['created_at'].replace('Z', '+00:00')),
-            likes=tw_data.get('public_metrics', {}).get('like_count', 0),
-            replies_count=tw_data.get('public_metrics', {}).get('reply_count', 0),
-            raw_data=tw_data
-        )
+@dataclass
+class BrowserConfig:
+    """Configuration for browser creation."""
+    headless: bool = False
+    profile_dir: Optional[str] = None      # Persistent profile
+    viewport: Dict[str, int] = field(default_factory=lambda: {"width": 1280, "height": 800})
+    user_agent: Optional[str] = None       # Random if None
+    storage_state: Optional[str] = None    # Session JSON path
+    browser_args: List[str] = field(default_factory=lambda: BROWSER_ARGS.copy())
+    proxy: Optional[str] = None            # Proxy URL
 ```
 
-## Export Schemas
+## Exception Classes
 
-### CSV Export Schema
+Defined in `src/core/exceptions.py`.
 
 ```python
-CSV_COMMENT_COLUMNS = [
-    'comment_id',
-    'platform',
-    'post_id',
-    'text',
-    'author_id',
-    'author_username',
-    'published_at',
-    'likes',
-    'replies_count',
-    'sentiment_label',
-    'sentiment_positive',
-    'sentiment_negative',
-    'sentiment_neutral',
-    'cluster_id',
-    'cluster_theme'
-]
+class ExtractionError(Exception):
+    """Base exception for extraction errors."""
+    def __init__(self, message: str, platform: Optional[str] = None):
+        self.message = message
+        self.platform = platform
 
-CSV_COMMENTER_COLUMNS = [
-    'commenter_id',
-    'username',
-    'platforms',
-    'total_comments',
-    'avg_likes',
-    'positive_ratio',
-    'negative_ratio',
-    'classification',
-    'influence_score',
-    'first_seen',
-    'last_seen'
-]
+class ScraperError(ExtractionError):
+    """Error during scraping."""
+    def __init__(
+        self,
+        message: str,
+        platform: Optional[str] = None,
+        account_id: Optional[str] = None,
+        original_error: Optional[Exception] = None
+    ):
+        ...
+
+class RateLimitError(ScraperError):
+    """Rate limit exceeded error."""
+    retry_after: int = 60
+
+class AuthenticationError(ScraperError):
+    """Authentication failed error."""
+
+class AccountNotFoundError(ScraperError):
+    """Account/page not found."""
+
+class PrivateAccountError(ScraperError):
+    """Account is private and cannot be scraped."""
+
+class StorageError(ExtractionError):
+    """Error during storage operations."""
+    operation: Optional[str] = None
+
+class ExportError(ExtractionError):
+    """Error during export."""
+    format: Optional[str] = None
+
+class ConfigurationError(ExtractionError):
+    """Configuration error."""
+    setting: Optional[str] = None
+
+class ValidationError(ExtractionError):
+    """Data validation error."""
+    field: Optional[str] = None
 ```
 
-### JSON Export Structure
+## Settings Models
+
+Defined in `src/config/settings.py`.
+
+### ProxySettings
 
 ```python
-JSON_EXPORT_SCHEMA = {
-    "metadata": {
-        "company": str,
-        "generated_at": datetime,
-        "date_range": {"start": datetime, "end": datetime},
-        "platforms": List[str],
-        "totals": {
-            "posts": int,
-            "comments": int,
-            "commenters": int
+class ProxySettings(BaseModel):
+    """Proxy configuration settings."""
+    enabled: bool = False
+    urls: List[str] = Field(default_factory=list)
+    rotate_on_error: bool = True
+
+    @field_validator('urls')
+    @classmethod
+    def validate_proxy_urls(cls, v: List[str]) -> List[str]:
+        """Validate proxy URL formats (http, https, socks4, socks5)."""
+        ...
+```
+
+### Platform Settings
+
+```python
+class ScraperSettings(BaseModel):
+    """Base settings for a scraper."""
+    enabled: bool = True
+    requests_per_minute: int = 30
+    max_retries: int = 3
+    proxies: ProxySettings = Field(default_factory=ProxySettings)
+
+class FacebookSettings(ScraperSettings):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    cookies_file: Optional[str] = None
+    pages_per_request: int = 10
+
+class InstagramSettings(ScraperSettings):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    session_file: Optional[str] = None
+    requests_per_minute: int = 15
+
+class TwitterSettings(ScraperSettings):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    requests_per_minute: int = 20
+
+class LinkedInSettings(ScraperSettings):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    requests_per_minute: int = 10
+```
+
+### Main Settings
+
+```python
+class Settings(BaseSettings):
+    """Main application settings."""
+
+    # General
+    app_name: str = "Comment Extractor"
+    debug: bool = False
+    log_level: str = "INFO"
+
+    # Paths
+    data_dir: str = "data"
+    exports_dir: str = "data/exports"
+    logs_dir: str = "logs"
+
+    # Database
+    database_path: str = "data/extractor.db"
+
+    # Extraction defaults
+    default_max_posts: int = 100
+    default_export_format: str = "json"
+
+    # Platform settings
+    facebook: FacebookSettings = Field(default_factory=FacebookSettings)
+    instagram: InstagramSettings = Field(default_factory=InstagramSettings)
+    twitter: TwitterSettings = Field(default_factory=TwitterSettings)
+    linkedin: LinkedInSettings = Field(default_factory=LinkedInSettings)
+
+    model_config = SettingsConfigDict(
+        env_prefix="EXTRACTOR_",
+        env_file=".env",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+```
+
+## Data Serialization
+
+### Post to Dictionary
+
+```python
+@staticmethod
+def post_to_dict(post: Post) -> Dict[str, Any]:
+    return {
+        "platform_id": post.platform_id,
+        "account_id": post.account_id,
+        "text": post.text,
+        "likes": post.likes,
+        "comments_count": post.comments_count,
+        "shares": post.shares,
+        "url": post.url,
+        "media_type": post.media_type,
+        "published_at": post.published_at.isoformat() if post.published_at else None,
+        "platform": post.platform.value,
+    }
+```
+
+### Comment to Dictionary
+
+```python
+@staticmethod
+def comment_to_dict(comment: Comment) -> Dict[str, Any]:
+    return {
+        "platform_id": comment.platform_id,
+        "post_id": comment.post_id,
+        "author": {
+            "platform_id": comment.author.platform_id,
+            "username": comment.author.username,
+            "display_name": comment.author.display_name,
+            "is_verified": comment.author.is_verified,
+        } if comment.author else None,
+        "text": comment.text,
+        "likes": comment.likes,
+        "parent_id": comment.parent_id,
+        "replies_count": comment.replies_count,
+        "published_at": comment.published_at.isoformat() if comment.published_at else None,
+        "platform": comment.platform.value,
+    }
+```
+
+## Export Formats
+
+### JSON Structure
+
+```json
+{
+  "metadata": {
+    "account": "personalpy",
+    "last_updated": "2024-11-21T18:51:00Z",
+    "created_at": "2024-11-20T19:00:00Z",
+    "total_posts": 150,
+    "total_comments": 5000,
+    "platforms": ["instagram", "facebook"]
+  },
+  "extractions": [
+    {
+      "post": {
+        "platform": "instagram",
+        "platform_id": "ig_12345",
+        "account_id": "personalpy",
+        "url": "https://instagram.com/p/...",
+        "text": "Post caption here",
+        "published_at": "2024-11-15T10:30:00Z",
+        "likes": 450,
+        "comments_count": 25,
+        "shares": 0,
+        "media_type": "image"
+      },
+      "comments": [
+        {
+          "platform": "instagram",
+          "platform_id": "ig_comment_987",
+          "post_id": "ig_12345",
+          "text": "Great post!",
+          "author": {
+            "platform_id": "ig_user_555",
+            "username": "john_doe",
+            "display_name": "John Doe",
+            "is_verified": false
+          },
+          "published_at": "2024-11-15T11:00:00Z",
+          "likes": 5,
+          "parent_id": null,
+          "replies_count": 1
         }
-    },
-    "sentiment_summary": SentimentSummary,
-    "clusters": List[CommentCluster],
-    "top_commenters": List[CommenterProfile],
-    "comments": List[Comment],
-    "posts": List[Post]
+      ]
+    }
+  ]
 }
+```
+
+### CSV Columns
+
+**Comments CSV**:
+```
+platform_id, post_id, platform, text, author_username, author_display_name,
+author_verified, published_at, likes, parent_id, replies_count
+```
+
+**Posts CSV**:
+```
+platform_id, account_id, platform, text, url, published_at,
+likes, comments_count, shares, media_type
 ```
 
 ## Validation Rules
 
-```python
-from pydantic import validator
+### Text Cleaning
 
-class Comment(BaseModel):
-    # ... fields ...
+- Remove null characters (`\x00`)
+- Strip leading/trailing whitespace
+- Normalize internal whitespace
 
-    @validator('text')
-    def text_not_empty(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Comment text cannot be empty')
-        return v.strip()
+### Timestamp Parsing
 
-    @validator('published_at')
-    def not_future_date(cls, v):
-        if v > datetime.utcnow():
-            raise ValueError('Published date cannot be in the future')
-        return v
+Supports multiple formats:
+- ISO 8601: `2024-11-21T18:51:00Z`
+- ISO 8601 with microseconds: `2024-11-21T18:51:00.000Z`
+- Custom: `2024-11-21 18:51:00`
 
-    @validator('likes', 'replies_count')
-    def non_negative(cls, v):
-        if v < 0:
-            raise ValueError('Count cannot be negative')
-        return v
+### Platform ID Generation
 
-class SentimentResult(BaseModel):
-    @validator('positive_score', 'negative_score', 'neutral_score')
-    def valid_probability(cls, v):
-        if not 0 <= v <= 1:
-            raise ValueError('Score must be between 0 and 1')
-        return v
-```
+Format: `{platform}_{original_id}`
+
+Examples:
+- Facebook post: `fb_123456789`
+- Instagram comment: `ig_comment_987654321`
+- Twitter reply: `tw_reply_555444333`
+
+## Type Safety
+
+All models use strict typing:
+- `Optional[T]` for nullable fields
+- `List[T]` for arrays
+- `Dict[str, Any]` for raw platform data
+- `datetime` for timestamps (not strings)
+- `int` for counts (not strings)
+
+Models are `@runtime_checkable` for protocol validation.

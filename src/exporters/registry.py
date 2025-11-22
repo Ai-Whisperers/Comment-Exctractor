@@ -1,12 +1,13 @@
 """Registry for data exporters."""
 
 import logging
-from typing import Dict, Type, List
+from typing import Dict, Type, List, Optional
 
 from .base import BaseExporter
 from .json_exporter import JSONExporter
 from .csv_exporter import CSVExporter
 from .jsonl_exporter import JSONLExporter
+from .options import ExportOptions
 from ..core.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -34,12 +35,13 @@ class ExporterRegistry:
         logger.debug(f"Registered exporter for {format_name}: {exporter_class.__name__}")
 
     @classmethod
-    def get(cls, format_name: str) -> BaseExporter:
+    def get(cls, format_name: str, options: Optional[ExportOptions] = None) -> BaseExporter:
         """
         Get an exporter instance for a format.
 
         Args:
             format_name: Format name
+            options: Export customization options
 
         Returns:
             Exporter instance
@@ -57,7 +59,7 @@ class ExporterRegistry:
             )
 
         exporter_class = cls._exporters[format_lower]
-        return exporter_class()
+        return exporter_class(options=options)
 
     @classmethod
     def list_available(cls) -> List[str]:

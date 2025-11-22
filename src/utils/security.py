@@ -1,8 +1,12 @@
-"""Security utilities for credential masking and sensitive data handling."""
+"""Security utilities for credential masking, path validation, and sensitive data handling."""
 
+import os
 import re
 import logging
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from ..core.exceptions import ValidationError
 
 
 # Patterns to detect sensitive fields
@@ -179,3 +183,257 @@ def setup_secure_logging(logger_name: Optional[str] = None) -> None:
         for handler in root.handlers:
             if sensitive_filter not in handler.filters:
                 handler.addFilter(sensitive_filter)
+
+
+# =============================================================================
+# Path Validation and Sanitization
+# =============================================================================
+
+# Pattern for valid names (client, account, platform)
+VALID_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+
+# Dangerous path patterns
+DANGEROUS_PATH_PATTERNS = [
+    '..',           # Parent directory traversal
+    '~',            # Home directory expansion
+    '//',           # UNC paths or root paths
+    '\\\\',         # Windows UNC paths
+]
+
+# Reserved Windows filenames
+WINDOWS_RESERVED = {
+    'CON', 'PRN', 'AUX', 'NUL',
+    'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+    'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+}
+
+
+def validate_safe_path(base_dir: Path, target_path: Path) -> bool:
+    """
+    Validate that target_path is safely within base_dir.
+
+    Prevents path traversal attacks (e.g., ../../etc/passwd).
+
+    Args:
+        base_dir: Base directory that should contain the target
+        target_path: Path to validate
+
+    Returns:
+        True if path is safe, False otherwise
+    """
+    try:
+        # Resolve to absolute paths
+        base_resolved = base_dir.resolve()
+        target_resolved = target_path.resolve()
+
+        # Check if target is within base using common path
+        common = os.path.commonpath([str(base_resolved), str(target_resolved)])
+        return common == str(base_resolved)
+    except (ValueError, OSError):
+        return False
+
+
+def validate_name(value: str, field_name: str) -> None:
+    """
+    Validate client/account names to prevent path traversal and injection.
+
+    Args:
+        value: The value to validate
+        field_name: Field name for error messages
+
+    Raises:
+        ValidationError: If value is invalid
+    """
+    if not value:
+        raise ValidationError(f"{field_name} cannot be empty", field=field_name)
+
+    if len(value) > 100:
+        raise ValidationError(
+            f"{field_name} too long (max 100 characters)",
+            field=field_name
+        )
+
+    if not VALID_NAME_PATTERN.match(value):
+        raise ValidationError(
+            f"Invalid {field_name}: '{value}'. "
+            f"Only alphanumeric, underscore, hyphen, and dot allowed.",
+            field=field_name
+        )
+
+    # Check for dangerous patterns
+    for pattern in DANGEROUS_PATH_PATTERNS:
+        if pattern in value:
+            raise ValidationError(
+                f"Invalid characters in {field_name}: '{value}'",
+                field=field_name
+            )
+
+    # Check for absolute paths
+    if value.startswith('/') or value.startswith('\\'):
+        raise ValidationError(
+            f"{field_name} cannot start with path separator",
+            field=field_name
+        )
+
+    # Check Windows reserved names
+    name_upper = value.upper().split('.')[0]
+    if name_upper in WINDOWS_RESERVED:
+        raise ValidationError(
+            f"{field_name} '{value}' is a reserved name",
+            field=field_name
+        )
+
+
+def sanitize_filename(name: str) -> str:
+    """
+    Sanitize a filename to prevent path traversal and invalid characters.
+
+    Args:
+        name: Filename to sanitize
+
+    Returns:
+        Sanitized filename
+    """
+    # Remove path separators and dangerous characters
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    # Remove leading/trailing dots and spaces
+    sanitized = sanitized.strip('. ')
+    # Replace .. with underscore
+    sanitized = sanitized.replace('..', '_')
+    # Prevent empty names
+    if not sanitized:
+        sanitized = 'unnamed'
+    # Limit length
+    if len(sanitized) > 255:
+        sanitized = sanitized[:255]
+
+    # Check for reserved Windows names
+    name_upper = sanitized.upper().split('.')[0]
+    if name_upper in WINDOWS_RESERVED:
+        sanitized = f"_{sanitized}"
+
+    return sanitized
+
+
+def sanitize_path_component(name: str) -> str:
+    """
+    Sanitize a single path component (directory or filename).
+
+    More restrictive than sanitize_filename - only allows alphanumeric,
+    underscore, hyphen, and dot.
+
+    Args:
+        name: Component name to sanitize
+
+    Returns:
+        Sanitized name
+    """
+    # Keep only safe characters
+    sanitized = name.lower().strip()
+    for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '..']:
+        sanitized = sanitized.replace(char, '_')
+
+    # Remove leading/trailing underscores and dots
+    sanitized = sanitized.strip('_.')
+
+    if not sanitized:
+        sanitized = 'unnamed'
+
+    # Check for reserved Windows names
+    name_upper = sanitized.upper().split('.')[0]
+    if name_upper in WINDOWS_RESERVED:
+        sanitized = f"_{sanitized}"
+
+    return sanitized
+
+
+def validate_path_no_traversal(path: str, field_name: str = "path") -> None:
+    """
+    Validate that a path string contains no traversal attempts.
+
+    Args:
+        path: Path string to validate
+        field_name: Field name for error messages
+
+    Raises:
+        ValidationError: If path contains traversal attempts
+    """
+    if not path:
+        return
+
+    # Check for dangerous patterns
+    for pattern in DANGEROUS_PATH_PATTERNS:
+        if pattern in path:
+            raise ValidationError(
+                f"{field_name} cannot contain '{pattern}'",
+                field=field_name
+            )
+
+
+def ensure_path_within_base(
+    base_dir: Path,
+    target_path: Path,
+    field_name: str = "path"
+) -> Path:
+    """
+    Ensure target path is within base directory, return resolved path.
+
+    Args:
+        base_dir: Base directory
+        target_path: Target path to validate
+        field_name: Field name for error messages
+
+    Returns:
+        Resolved safe path
+
+    Raises:
+        ValidationError: If path escapes base directory
+    """
+    if not validate_safe_path(base_dir, target_path):
+        raise ValidationError(
+            f"{field_name} escapes base directory: {target_path}",
+            field=field_name
+        )
+
+    return target_path.resolve()
+
+
+def create_safe_path(
+    base_dir: Path,
+    *components: str,
+    ensure_exists: bool = False
+) -> Path:
+    """
+    Create a safe path by sanitizing all components.
+
+    Args:
+        base_dir: Base directory
+        *components: Path components to join
+        ensure_exists: Create directories if True
+
+    Returns:
+        Safe, sanitized path
+
+    Raises:
+        ValidationError: If resulting path escapes base
+    """
+    # Sanitize all components
+    safe_components = [sanitize_path_component(c) for c in components]
+
+    # Build path
+    result = base_dir
+    for component in safe_components:
+        result = result / component
+
+    # Validate final path
+    if not validate_safe_path(base_dir, result):
+        raise ValidationError(
+            f"Path escapes base directory: {result}",
+            field="path"
+        )
+
+    # Create if requested
+    if ensure_exists:
+        result.parent.mkdir(parents=True, exist_ok=True)
+
+    return result

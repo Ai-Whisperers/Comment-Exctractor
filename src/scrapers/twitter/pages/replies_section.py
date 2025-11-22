@@ -26,11 +26,17 @@ class RepliesSection(BasePage):
         logger.info(f"EXTRACTED {len(replies)} REPLIES | tweet_id={tweet_id}")
         return replies
 
-    def _load_more_replies(self, max_loads: int = 5) -> None:
+    def _load_more_replies(self, max_loads: int = 10) -> None:
+        """Load more replies by clicking show more buttons."""
         for i in range(max_loads):
             try:
+                # Try show more replies
                 if self.is_visible(Selectors.Replies.SHOW_MORE, timeout=1000):
                     self.click(Selectors.Replies.SHOW_MORE)
+                    self.wait(1500)
+                # Try show replies
+                elif self.is_visible(Selectors.Replies.SHOW_REPLIES, timeout=500):
+                    self.click(Selectors.Replies.SHOW_REPLIES)
                     self.wait(1500)
                 else:
                     break
@@ -69,10 +75,34 @@ class RepliesSection(BasePage):
                                 timestamp = timeElem.getAttribute('datetime');
                             }
 
+                            // Extract likes count
+                            let likes = 0;
+                            const likeBtn = article.querySelector('div[data-testid="like"] span');
+                            if (likeBtn) {
+                                const likesText = likeBtn.textContent.trim();
+                                const likesMatch = likesText.match(/\\d+/);
+                                if (likesMatch) {
+                                    likes = parseInt(likesMatch[0], 10);
+                                }
+                            }
+
+                            // Extract reply count for this reply
+                            let repliesCount = 0;
+                            const replyBtn = article.querySelector('div[data-testid="reply"] span');
+                            if (replyBtn) {
+                                const repliesText = replyBtn.textContent.trim();
+                                const repliesMatch = repliesText.match(/\\d+/);
+                                if (repliesMatch) {
+                                    repliesCount = parseInt(repliesMatch[0], 10);
+                                }
+                            }
+
                             replies.push({
                                 author: author,
                                 text: text,
                                 timestamp: timestamp,
+                                likes: likes,
+                                replies_count: repliesCount,
                                 index: i
                             });
                         } catch (e) {}
@@ -102,9 +132,9 @@ class RepliesSection(BasePage):
                     'author': reply.get('author', 'unknown'),
                     'text': text,
                     'published_at': timestamp,
-                    'likes': 0,
+                    'likes': reply.get('likes', 0),
                     'parent_id': None,
-                    'replies_count': 0,
+                    'replies_count': reply.get('replies_count', 0),
                 })
 
             return processed

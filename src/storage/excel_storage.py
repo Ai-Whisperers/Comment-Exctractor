@@ -1,7 +1,7 @@
 """Excel storage backend implementation."""
 
 import logging
-from typing import List
+from typing import List, Dict, Any, Optional, Tuple, Type
 
 from .base import StorageBackend, StorageFactory
 from ..core.models import Post, Comment, Profile
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class ExcelStorage(StorageBackend):
     """Excel file storage backend using openpyxl."""
 
-    def _get_workbook(self):
+    def _get_workbook(self) -> Tuple[Type, Type, Type, Type]:
         """Import openpyxl lazily to avoid import errors if not installed."""
         try:
             from openpyxl import Workbook
@@ -24,7 +24,7 @@ class ExcelStorage(StorageBackend):
                 "Install it with: pip install openpyxl"
             )
 
-    def _apply_header_style(self, ws, headers):
+    def _apply_header_style(self, ws: Any, headers: List[str]) -> None:
         """Apply styling to header row."""
         _, Font, PatternFill, Alignment = self._get_workbook()
 
@@ -37,7 +37,7 @@ class ExcelStorage(StorageBackend):
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center")
 
-    def _auto_fit_columns(self, ws):
+    def _auto_fit_columns(self, ws: Any) -> None:
         """Auto-fit column widths based on content."""
         for column in ws.columns:
             max_length = 0
@@ -66,27 +66,24 @@ class ExcelStorage(StorageBackend):
         ws.title = "Posts"
 
         headers = [
-            "ID", "Platform ID", "Author", "Text", "Likes",
-            "Comments", "Shares", "URL", "Image URL",
-            "Video URL", "Published At", "Scraped At", "Platform"
+            "Platform ID", "Account ID", "Text", "Likes",
+            "Comments", "Shares", "URL", "Media Type",
+            "Published At", "Platform"
         ]
         self._apply_header_style(ws, headers)
 
         for row, post in enumerate(posts, 2):
             data = self.post_to_dict(post)
-            ws.cell(row=row, column=1, value=data["id"])
-            ws.cell(row=row, column=2, value=data["platform_id"])
-            ws.cell(row=row, column=3, value=data["author"])
-            ws.cell(row=row, column=4, value=data["text"])
-            ws.cell(row=row, column=5, value=data["likes"])
-            ws.cell(row=row, column=6, value=data["comments_count"])
-            ws.cell(row=row, column=7, value=data["shares"])
-            ws.cell(row=row, column=8, value=data["url"])
-            ws.cell(row=row, column=9, value=data["image_url"])
-            ws.cell(row=row, column=10, value=data["video_url"])
-            ws.cell(row=row, column=11, value=data["published_at"])
-            ws.cell(row=row, column=12, value=data["scraped_at"])
-            ws.cell(row=row, column=13, value=data["platform"])
+            ws.cell(row=row, column=1, value=data["platform_id"])
+            ws.cell(row=row, column=2, value=data["account_id"])
+            ws.cell(row=row, column=3, value=data["text"])
+            ws.cell(row=row, column=4, value=data["likes"])
+            ws.cell(row=row, column=5, value=data["comments_count"])
+            ws.cell(row=row, column=6, value=data["shares"])
+            ws.cell(row=row, column=7, value=data["url"])
+            ws.cell(row=row, column=8, value=data["media_type"])
+            ws.cell(row=row, column=9, value=data["published_at"])
+            ws.cell(row=row, column=10, value=data["platform"])
 
         self._auto_fit_columns(ws)
         wb.save(filepath)
@@ -109,22 +106,23 @@ class ExcelStorage(StorageBackend):
         ws.title = "Comments"
 
         headers = [
-            "ID", "Post ID", "Author", "Text", "Likes",
-            "Parent ID", "Replies", "Published At", "Scraped At"
+            "Platform ID", "Post ID", "Author", "Text", "Likes",
+            "Parent ID", "Replies", "Published At", "Platform"
         ]
         self._apply_header_style(ws, headers)
 
         for row, comment in enumerate(comments, 2):
             data = self.comment_to_dict(comment)
-            ws.cell(row=row, column=1, value=data["id"])
+            author_str = data["author"]["username"] if data["author"] else ""
+            ws.cell(row=row, column=1, value=data["platform_id"])
             ws.cell(row=row, column=2, value=data["post_id"])
-            ws.cell(row=row, column=3, value=data["author"])
+            ws.cell(row=row, column=3, value=author_str)
             ws.cell(row=row, column=4, value=data["text"])
             ws.cell(row=row, column=5, value=data["likes"])
             ws.cell(row=row, column=6, value=data["parent_id"])
             ws.cell(row=row, column=7, value=data["replies_count"])
             ws.cell(row=row, column=8, value=data["published_at"])
-            ws.cell(row=row, column=9, value=data["scraped_at"])
+            ws.cell(row=row, column=9, value=data["platform"])
 
         self._auto_fit_columns(ws)
         wb.save(filepath)
@@ -147,25 +145,23 @@ class ExcelStorage(StorageBackend):
         ws.title = "Profile"
 
         headers = [
-            "Username", "Display Name", "Bio", "Followers",
-            "Following", "Posts", "Profile URL",
-            "Avatar URL", "Verified", "Private", "Platform", "Scraped At"
+            "Platform ID", "Username", "Display Name", "Description", "Followers",
+            "Following", "Posts", "URL", "Profile Image", "Verified", "Platform"
         ]
         self._apply_header_style(ws, headers)
 
         data = self.profile_to_dict(profile)
-        ws.cell(row=2, column=1, value=data["username"])
-        ws.cell(row=2, column=2, value=data["display_name"])
-        ws.cell(row=2, column=3, value=data["bio"])
-        ws.cell(row=2, column=4, value=data["followers_count"])
-        ws.cell(row=2, column=5, value=data["following_count"])
-        ws.cell(row=2, column=6, value=data["posts_count"])
-        ws.cell(row=2, column=7, value=data["profile_url"])
-        ws.cell(row=2, column=8, value=data["avatar_url"])
-        ws.cell(row=2, column=9, value=data["is_verified"])
-        ws.cell(row=2, column=10, value=data["is_private"])
+        ws.cell(row=2, column=1, value=data["platform_id"])
+        ws.cell(row=2, column=2, value=data["username"])
+        ws.cell(row=2, column=3, value=data["display_name"])
+        ws.cell(row=2, column=4, value=data["description"])
+        ws.cell(row=2, column=5, value=data["followers_count"])
+        ws.cell(row=2, column=6, value=data["following_count"])
+        ws.cell(row=2, column=7, value=data["posts_count"])
+        ws.cell(row=2, column=8, value=data["url"])
+        ws.cell(row=2, column=9, value=data["profile_image"])
+        ws.cell(row=2, column=10, value=data["is_verified"])
         ws.cell(row=2, column=11, value=data["platform"])
-        ws.cell(row=2, column=12, value=data["scraped_at"])
 
         self._auto_fit_columns(ws)
         wb.save(filepath)
@@ -177,10 +173,10 @@ class ExcelStorage(StorageBackend):
         self,
         posts: List[Post],
         comments: List[Comment],
-        profile,
+        profile: Optional[Profile],
         account: str,
         platform: str
-    ):
+    ) -> Dict[str, str]:
         """Save complete extraction to a single Excel file with multiple sheets."""
         Workbook, _, _, _ = self._get_workbook()
         filepath = self._generate_filename(account, platform, "extraction", "xlsx")
@@ -194,21 +190,21 @@ class ExcelStorage(StorageBackend):
         if posts:
             ws_posts = wb.create_sheet("Posts")
             headers = [
-                "ID", "Platform ID", "Author", "Text", "Likes",
-                "Comments", "Shares", "URL", "Published At", "Platform"
+                "Platform ID", "Account ID", "Text", "Likes",
+                "Comments", "Shares", "URL", "Media Type", "Published At", "Platform"
             ]
             self._apply_header_style(ws_posts, headers)
 
             for row, post in enumerate(posts, 2):
                 data = self.post_to_dict(post)
-                ws_posts.cell(row=row, column=1, value=data["id"])
-                ws_posts.cell(row=row, column=2, value=data["platform_id"])
-                ws_posts.cell(row=row, column=3, value=data["author"])
-                ws_posts.cell(row=row, column=4, value=data["text"])
-                ws_posts.cell(row=row, column=5, value=data["likes"])
-                ws_posts.cell(row=row, column=6, value=data["comments_count"])
-                ws_posts.cell(row=row, column=7, value=data["shares"])
-                ws_posts.cell(row=row, column=8, value=data["url"])
+                ws_posts.cell(row=row, column=1, value=data["platform_id"])
+                ws_posts.cell(row=row, column=2, value=data["account_id"])
+                ws_posts.cell(row=row, column=3, value=data["text"])
+                ws_posts.cell(row=row, column=4, value=data["likes"])
+                ws_posts.cell(row=row, column=5, value=data["comments_count"])
+                ws_posts.cell(row=row, column=6, value=data["shares"])
+                ws_posts.cell(row=row, column=7, value=data["url"])
+                ws_posts.cell(row=row, column=8, value=data["media_type"])
                 ws_posts.cell(row=row, column=9, value=data["published_at"])
                 ws_posts.cell(row=row, column=10, value=data["platform"])
 
@@ -218,21 +214,23 @@ class ExcelStorage(StorageBackend):
         if comments:
             ws_comments = wb.create_sheet("Comments")
             headers = [
-                "ID", "Post ID", "Author", "Text", "Likes",
-                "Parent ID", "Replies", "Published At"
+                "Platform ID", "Post ID", "Author", "Text", "Likes",
+                "Parent ID", "Replies", "Published At", "Platform"
             ]
             self._apply_header_style(ws_comments, headers)
 
             for row, comment in enumerate(comments, 2):
                 data = self.comment_to_dict(comment)
-                ws_comments.cell(row=row, column=1, value=data["id"])
+                author_str = data["author"]["username"] if data["author"] else ""
+                ws_comments.cell(row=row, column=1, value=data["platform_id"])
                 ws_comments.cell(row=row, column=2, value=data["post_id"])
-                ws_comments.cell(row=row, column=3, value=data["author"])
+                ws_comments.cell(row=row, column=3, value=author_str)
                 ws_comments.cell(row=row, column=4, value=data["text"])
                 ws_comments.cell(row=row, column=5, value=data["likes"])
                 ws_comments.cell(row=row, column=6, value=data["parent_id"])
                 ws_comments.cell(row=row, column=7, value=data["replies_count"])
                 ws_comments.cell(row=row, column=8, value=data["published_at"])
+                ws_comments.cell(row=row, column=9, value=data["platform"])
 
             self._auto_fit_columns(ws_comments)
 
@@ -240,20 +238,23 @@ class ExcelStorage(StorageBackend):
         if profile:
             ws_profile = wb.create_sheet("Profile")
             headers = [
-                "Username", "Display Name", "Bio", "Followers",
-                "Following", "Posts", "Verified", "Platform"
+                "Platform ID", "Username", "Display Name", "Description", "Followers",
+                "Following", "Posts", "URL", "Profile Image", "Verified", "Platform"
             ]
             self._apply_header_style(ws_profile, headers)
 
             data = self.profile_to_dict(profile)
-            ws_profile.cell(row=2, column=1, value=data["username"])
-            ws_profile.cell(row=2, column=2, value=data["display_name"])
-            ws_profile.cell(row=2, column=3, value=data["bio"])
-            ws_profile.cell(row=2, column=4, value=data["followers_count"])
-            ws_profile.cell(row=2, column=5, value=data["following_count"])
-            ws_profile.cell(row=2, column=6, value=data["posts_count"])
-            ws_profile.cell(row=2, column=7, value=data["is_verified"])
-            ws_profile.cell(row=2, column=8, value=data["platform"])
+            ws_profile.cell(row=2, column=1, value=data["platform_id"])
+            ws_profile.cell(row=2, column=2, value=data["username"])
+            ws_profile.cell(row=2, column=3, value=data["display_name"])
+            ws_profile.cell(row=2, column=4, value=data["description"])
+            ws_profile.cell(row=2, column=5, value=data["followers_count"])
+            ws_profile.cell(row=2, column=6, value=data["following_count"])
+            ws_profile.cell(row=2, column=7, value=data["posts_count"])
+            ws_profile.cell(row=2, column=8, value=data["url"])
+            ws_profile.cell(row=2, column=9, value=data["profile_image"])
+            ws_profile.cell(row=2, column=10, value=data["is_verified"])
+            ws_profile.cell(row=2, column=11, value=data["platform"])
 
             self._auto_fit_columns(ws_profile)
 

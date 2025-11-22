@@ -2,10 +2,11 @@
 
 import csv
 import logging
-from typing import List
+from typing import List, Optional
 
 from ..core.models import Comment, Post, ExportMetadata
 from .base import BaseExporter
+from .options import ExportOptions
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,10 @@ class CSVExporter(BaseExporter):
     """Export data to CSV format."""
 
     format = "csv"
+
+    def __init__(self, options: Optional[ExportOptions] = None):
+        """Initialize CSV exporter with options."""
+        super().__init__(options)
 
     def export(
         self,
@@ -34,40 +39,31 @@ class CSVExporter(BaseExporter):
         """
         output_file = self._ensure_output_dir(output_path)
 
-        fieldnames = [
-            "id",
-            "platform",
-            "post_id",
-            "text",
-            "author_id",
-            "author_username",
-            "author_display_name",
-            "author_is_verified",
-            "published_at",
-            "likes",
-            "replies_count",
-            "parent_id",
-        ]
+        # Convert comments to dicts using options
+        if comments:
+            rows = [self._comment_to_dict(comment) for comment in comments]
+            # Get fieldnames from first row (after options processing)
+            fieldnames = list(rows[0].keys()) if rows else []
+        else:
+            fieldnames = []
+            rows = []
 
         with open(output_file, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
+            writer = csv.DictWriter(
+                f,
+                fieldnames=fieldnames,
+                delimiter=self.options.csv_delimiter,
+                quoting=self.options.csv_quoting.value,
+                lineterminator=self.options.csv_line_terminator
+            )
 
-            for comment in comments:
-                writer.writerow({
-                    "id": comment.platform_id,
-                    "platform": comment.platform.value,
-                    "post_id": comment.post_id,
-                    "text": comment.text,
-                    "author_id": comment.author.platform_id,
-                    "author_username": comment.author.username,
-                    "author_display_name": comment.author.display_name,
-                    "author_is_verified": comment.author.is_verified,
-                    "published_at": comment.published_at.isoformat() if comment.published_at else "",
-                    "likes": comment.likes,
-                    "replies_count": comment.replies_count,
-                    "parent_id": comment.parent_id or "",
-                })
+            if self.options.csv_include_header:
+                writer.writeheader()
+
+            for row in rows:
+                # Convert None values to empty strings for CSV
+                clean_row = {k: (v if v is not None else "") for k, v in row.items()}
+                writer.writerow(clean_row)
 
         logger.info(f"Exported {len(comments)} comments to {output_file}")
         return str(output_file)
@@ -91,36 +87,31 @@ class CSVExporter(BaseExporter):
         """
         output_file = self._ensure_output_dir(output_path)
 
-        fieldnames = [
-            "id",
-            "platform",
-            "account_id",
-            "url",
-            "text",
-            "published_at",
-            "likes",
-            "comments_count",
-            "shares",
-            "media_type",
-        ]
+        # Convert posts to dicts using options
+        if posts:
+            rows = [self._post_to_dict(post) for post in posts]
+            # Get fieldnames from first row (after options processing)
+            fieldnames = list(rows[0].keys()) if rows else []
+        else:
+            fieldnames = []
+            rows = []
 
         with open(output_file, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
+            writer = csv.DictWriter(
+                f,
+                fieldnames=fieldnames,
+                delimiter=self.options.csv_delimiter,
+                quoting=self.options.csv_quoting.value,
+                lineterminator=self.options.csv_line_terminator
+            )
 
-            for post in posts:
-                writer.writerow({
-                    "id": post.platform_id,
-                    "platform": post.platform.value,
-                    "account_id": post.account_id,
-                    "url": post.url or "",
-                    "text": post.text or "",
-                    "published_at": post.published_at.isoformat() if post.published_at else "",
-                    "likes": post.likes,
-                    "comments_count": post.comments_count,
-                    "shares": post.shares,
-                    "media_type": post.media_type or "",
-                })
+            if self.options.csv_include_header:
+                writer.writeheader()
+
+            for row in rows:
+                # Convert None values to empty strings for CSV
+                clean_row = {k: (v if v is not None else "") for k, v in row.items()}
+                writer.writerow(clean_row)
 
         logger.info(f"Exported {len(posts)} posts to {output_file}")
         return str(output_file)

@@ -1,11 +1,12 @@
 """Instagram Scraper using Page Object Model architecture."""
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional, Dict, Any
 
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
+from playwright.sync_api import Page
 
 from ...core.models import (
     Platform,
@@ -19,6 +20,9 @@ from ...core.exceptions import (
     RateLimitError,
 )
 from ..base import BaseScraper
+from ..shared.browser_manager import BrowserManager, BrowserConfig
+from ..shared.rate_limiting import InstagramRateLimitDetector
+from ..shared.constants import TIMEOUTS
 from .pages import LoginPage, ProfilePage, PostModal, CommentsSection
 from .selectors import Selectors
 
@@ -49,12 +53,10 @@ class InstagramScraper(BaseScraper):
         self._password = config.get("password")
 
         # Browser settings
-        self._headless = config.get("headless", True)
+        self._headless = config.get("headless", False)
 
-        # Session
-        self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
+        # Browser manager (handles lifecycle)
+        self._browser_manager: Optional[BrowserManager] = None
         self._page: Optional[Page] = None
 
         # Page objects (initialized after browser)
@@ -63,77 +65,32 @@ class InstagramScraper(BaseScraper):
         self._post_modal: Optional[PostModal] = None
         self._comments_section: Optional[CommentsSection] = None
 
+        # Rate limit detector
+        self._rate_limit_detector = InstagramRateLimitDetector()
+
         # Initialize browser
         self._init_browser()
 
-    def _init_browser(self):
-        """Initialize Playwright browser and page objects."""
-        logger.info("BROWSER INIT | platform=instagram | headless=%s", self._headless)
+    def _init_browser(self) -> None:
+        """Initialize browser using BrowserManager."""
+        # Get session file path for storage state
+        session_file = self.config.get("session_file")
+        storage_state = None
+        if session_file:
+            session_path = Path(session_file)
+            playwright_session = session_path.with_suffix('.playwright.json')
+            if playwright_session.exists():
+                storage_state = str(playwright_session)
 
-        self._playwright = sync_playwright().start()
+        browser_config = BrowserConfig(
+            headless=self._headless,
+            profile_dir=self.config.get("browser_profile"),
+            storage_state=storage_state,
+            proxy=self._current_proxy,
+        )
 
-        # Check for persistent browser profile
-        browser_profile = self.config.get("browser_profile")
-
-        if browser_profile and Path(browser_profile).exists():
-            # Use persistent context with existing browser profile (includes cookies, localStorage, etc.)
-            logger.info(f"BROWSER INIT | using persistent context from {browser_profile}")
-            self._context = self._playwright.chromium.launch_persistent_context(
-                browser_profile,
-                headless=self._headless,
-                viewport={"width": 1280, "height": 800},
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ],
-            )
-            self._browser = None  # No separate browser object with persistent context
-            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-        else:
-            # Standard browser launch
-            self._browser = self._playwright.chromium.launch(
-                headless=self._headless,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ]
-            )
-
-            # Create context with session storage
-            # Note: Playwright requires JSON format for storage_state
-            # The session file should be a Playwright-exported JSON, not an Instaloader pickle file
-            session_file = self.config.get("session_file")
-            storage_state = None
-
-            if session_file:
-                session_path = Path(session_file)
-                # Check if it's a Playwright session file (JSON format)
-                playwright_session = session_path.with_suffix('.playwright.json')
-
-                if playwright_session.exists():
-                    try:
-                        # Verify it's valid JSON
-                        import json
-                        with open(playwright_session, 'r') as f:
-                            json.load(f)
-                        storage_state = str(playwright_session)
-                        logger.info(f"BROWSER INIT | loading Playwright session from {playwright_session}")
-                    except (json.JSONDecodeError, IOError) as e:
-                        logger.warning(f"Failed to load Playwright session {playwright_session}: {e}")
-                else:
-                    logger.debug(f"BROWSER INIT | no Playwright session file found at {playwright_session}")
-
-            self._context = self._browser.new_context(
-                storage_state=storage_state,
-                viewport={"width": 1280, "height": 800},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-            )
-
-            self._page = self._context.new_page()
+        self._browser_manager = BrowserManager(browser_config, "instagram")
+        self._page = self._browser_manager.page
 
         # Initialize page objects
         self._login_page = LoginPage(self._page)
@@ -141,7 +98,35 @@ class InstagramScraper(BaseScraper):
         self._post_modal = PostModal(self._page)
         self._comments_section = CommentsSection(self._page)
 
-        logger.info("BROWSER INIT | complete")
+    def _check_rate_limit(self) -> bool:
+        """
+        Check if Instagram is rate limiting us.
+
+        Returns:
+            True if rate limited, False otherwise
+        """
+        return self._rate_limit_detector.is_rate_limited(self._page)
+
+    def _navigate_to_url(self, url: str, max_retries: int = 3) -> bool:
+        """
+        Navigate to URL with retry and rate limit detection.
+
+        Uses the base class _navigate_with_retry method with Instagram-specific selectors.
+
+        Args:
+            url: URL to navigate to
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            True if navigation succeeded, False otherwise
+        """
+        return super()._navigate_with_retry(
+            page=self._page,
+            url=url,
+            content_selectors=["article", "button", "div[role='dialog']"],
+            rate_limit_detector=self._rate_limit_detector,
+            max_retries=max_retries
+        )
 
     def _ensure_logged_in(self):
         """Ensure user is logged in, performing login if necessary."""
@@ -189,7 +174,7 @@ class InstagramScraper(BaseScraper):
             if session_file:
                 session_path = Path(session_file)
                 playwright_session = session_path.with_suffix('.playwright.json')
-                self._context.storage_state(path=str(playwright_session))
+                self._browser_manager.save_storage_state(str(playwright_session))
                 logger.info(f"SESSION | saved Playwright session to {playwright_session}")
 
         except Exception as e:
@@ -246,15 +231,21 @@ class InstagramScraper(BaseScraper):
         self,
         account_id: str,
         since_date: Optional[datetime],
-        max_posts: int
+        max_posts: int,
+        known_post_ids: set = None
     ) -> Iterator[ExtractionResult]:
         """
         Scrape posts and comments from an Instagram account.
+
+        Uses a 2-phase approach like Facebook:
+        - Phase 1: Collect all post links from profile grid
+        - Phase 2: Visit each post and extract data + comments
 
         Args:
             account_id: Instagram username
             since_date: Only get posts after this date
             max_posts: Maximum number of posts to extract
+            known_post_ids: Set of post IDs to skip (already extracted)
 
         Yields:
             ExtractionResult objects with post and comments
@@ -266,24 +257,7 @@ class InstagramScraper(BaseScraper):
 
         # Verify we're still logged in after navigation
         if not self._verify_logged_in_on_profile():
-            # Force re-login
-            logger.info("SESSION | forcing re-login")
-            if self._username and self._password:
-                self._login_page.login(self._username, self._password)
-                # Save new session
-                session_file = self.config.get("session_file")
-                if session_file:
-                    session_path = Path(session_file)
-                    playwright_session = session_path.with_suffix('.playwright.json')
-                    self._context.storage_state(path=str(playwright_session))
-                    logger.info(f"SESSION | saved new Playwright session to {playwright_session}")
-                # Navigate back to profile
-                self._profile_page.navigate(account_id)
-            else:
-                raise AuthenticationError(
-                    "Session expired and no credentials available for re-login",
-                    platform=self.platform.value
-                )
+            self._handle_session_expiry(account_id)
 
         # Check for private account
         if self._profile_page.is_private():
@@ -293,74 +267,80 @@ class InstagramScraper(BaseScraper):
                 account_id=account_id
             )
 
-        # Collect all content links upfront (more reliable than ArrowRight navigation)
-        # Use scroll_all if max_posts is very high (indicates user wants all posts)
-        # Only enable scroll_all for very large requests (> 100 posts)
-        scroll_all = max_posts > 100
-        content_links = self._profile_page.get_post_links(max_posts, scroll_all=scroll_all)
-        if not content_links:
-            logger.error("No content found on profile")
+        # ============================================================
+        # PHASE 1: Collect post links from profile grid
+        # ============================================================
+        scroll_all = max_posts > 50
+
+        post_links = self._profile_page.get_post_links(
+            count=max_posts,
+            scroll_all=scroll_all,
+            known_post_ids=known_post_ids
+        )
+
+        if not post_links:
+            logger.warning("No posts found on profile")
             return
 
-        logger.info(f"COLLECTED {len(content_links)} CONTENT LINKS")
+        logger.info(f"PHASE 1 COMPLETE | Collected {len(post_links)} post links")
 
-        # Navigation variables
+        # ============================================================
+        # PHASE 2: Extract data from each post
+        # ============================================================
         posts_scraped = 0
+        posts_skipped = 0
         consecutive_failures = 0
         max_failures = 5
-        seen_post_ids = set()
+        known_post_ids = known_post_ids or set()
 
-        # Iterate through collected content links
-        for content_url in content_links:
+        for post_url in post_links:
             if posts_scraped >= max_posts:
                 break
 
-            # Navigate directly to the content
-            try:
-                self._page.goto(content_url, wait_until="domcontentloaded")
-                # Wait for Instagram's React app to hydrate and render interactive elements
-                # Try to wait for article element (indicates full page load) or buttons
+            # Navigate with retry logic
+            nav_success = False
+            for attempt in range(3):
                 try:
-                    self._page.wait_for_selector(
-                        "article, button, div[role='dialog']",
-                        timeout=10000
-                    )
-                except Exception:
-                    pass  # Continue even if selector not found
-                # Additional wait for JavaScript to fully execute
-                self._page.wait_for_timeout(3000)
-            except Exception as e:
-                logger.warning(f"Failed to navigate to {content_url}: {e}")
+                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+                    self._page.wait_for_timeout(TIMEOUTS.CONTENT_LOAD)
+                    nav_success = True
+                    break
+                except Exception as nav_error:
+                    logger.warning(f"Navigation attempt {attempt + 1}/3 failed for {post_url[:60]}...: {nav_error}")
+                    if attempt < 2:
+                        self._page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
+
+            if not nav_success:
+                logger.warning(f"Failed to navigate to post after 3 attempts: {post_url[:60]}...")
                 consecutive_failures += 1
                 if consecutive_failures >= max_failures:
+                    logger.warning("Too many navigation failures, stopping")
                     break
                 continue
 
-            # Get post ID from URL
-            post_id = self._post_modal.get_post_id()
-
-            if not post_id:
-                # Try waiting a bit longer for the content to load
-                self._post_modal.wait(1500)
-                post_id = self._post_modal.get_post_id()
-
-            if not post_id:
-                logger.warning(f"Could not get post ID from {content_url}")
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
+            # Check for rate limiting after navigation
+            if self._check_rate_limit():
+                logger.warning("Rate limit detected, waiting before retry...")
+                self._page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
+                if self._check_rate_limit():
+                    logger.error("Still rate limited after waiting, stopping extraction")
                     break
-                continue
 
-            # Skip if already seen
-            if post_id in seen_post_ids:
-                continue
-
-            seen_post_ids.add(post_id)
-            consecutive_failures = 0
-
-            # Extract post data
             try:
+                # Extract post data
                 post_data = self._post_modal.extract_post_data(account_id)
+                post_id = post_data.get("id") or self._post_modal.get_post_id()
+
+                if not post_id:
+                    logger.warning(f"Could not get post ID from {post_url}")
+                    consecutive_failures += 1
+                    continue
+
+                # Skip if post already exists in database
+                if post_id in known_post_ids:
+                    posts_skipped += 1
+                    logger.debug(f"Skipping existing post: {post_id}")
+                    continue
 
                 # Create Post object
                 post = Post(
@@ -380,12 +360,12 @@ class InstagramScraper(BaseScraper):
 
                 # Check date filter
                 if since_date and post.published_at and post.published_at < since_date:
-                    logger.info(f"Post {post_id} before since_date, stopping")
+                    logger.info(f"Post {post.platform_id} before since_date, stopping")
                     break
 
                 # Extract comments
-                raw_comments = self._comments_section.extract_comments_for_post(post_id)
-                comments = self._create_comment_objects(raw_comments, post_id)
+                raw_comments = self._comments_section.extract_comments_for_post(post.platform_id)
+                comments = self._create_comment_objects(raw_comments, post.platform_id)
                 post.comments_count = len(comments)
 
                 yield ExtractionResult(post=post, comments=comments)
@@ -394,7 +374,7 @@ class InstagramScraper(BaseScraper):
 
                 logger.info(
                     f"SCRAPED | {posts_scraped}/{max_posts} | "
-                    f"post_id={post_id} | comments={len(comments)}"
+                    f"post_id={post.platform_id} | comments={len(comments)}"
                 )
 
                 # Extended break check
@@ -402,40 +382,44 @@ class InstagramScraper(BaseScraper):
                     self.take_extended_break()
 
             except Exception as e:
-                logger.warning(f"Error extracting post {post_id}: {e}")
+                logger.warning(f"Error extracting post from {post_url}: {e}")
                 consecutive_failures += 1
 
             if consecutive_failures >= max_failures:
                 logger.warning("Too many failures, stopping")
                 break
 
-            # Human-like delay before next navigation
+            # Human-like delay
             self._post_modal.human_delay(1000, 2000)
 
         logger.info(
-            f"EXTRACTION COMPLETE | account={account_id} | "
-            f"posts={posts_scraped} | seen={len(seen_post_ids)}"
+            f"PHASE 2 COMPLETE | account={account_id} | "
+            f"posts={posts_scraped} | skipped={posts_skipped}"
         )
 
-    def close(self):
+    def _handle_session_expiry(self, account_id: str) -> None:
+        """Handle session expiry by re-logging in."""
+        logger.info("SESSION | forcing re-login")
+        if self._username and self._password:
+            self._login_page.login(self._username, self._password)
+            # Save new session
+            session_file = self.config.get("session_file")
+            if session_file:
+                session_path = Path(session_file)
+                playwright_session = session_path.with_suffix('.playwright.json')
+                self._browser_manager.save_storage_state(str(playwright_session))
+                logger.info(f"SESSION | saved new Playwright session to {playwright_session}")
+            # Navigate back to profile
+            self._profile_page.navigate(account_id)
+        else:
+            raise AuthenticationError(
+                "Session expired and no credentials available for re-login",
+                platform=self.platform.value
+            )
+
+    def close(self) -> None:
         """Clean up browser resources."""
-        try:
-            if self._page:
-                self._page.close()
-            if self._context:
-                self._context.close()
-            if self._browser:
-                self._browser.close()
-            if self._playwright:
-                self._playwright.stop()
-
-            logger.info("BROWSER SHUTDOWN | complete")
-        except Exception as e:
-            logger.warning(f"Error during cleanup: {e}")
-
-    def __del__(self):
-        """Cleanup on deletion."""
-        try:
-            self.close()
-        except Exception:
-            pass
+        if self._browser_manager:
+            self._browser_manager.close()
+            self._browser_manager = None
+        super().close()

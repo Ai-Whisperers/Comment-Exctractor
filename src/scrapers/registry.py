@@ -117,6 +117,13 @@ def _register_default_scrapers():
     except ImportError as e:
         logger.warning(f"LinkedIn scraper not available: {e}")
 
+    try:
+        from .google import GoogleScraper
+        ScraperRegistry.register(Platform.GOOGLE, GoogleScraper)
+        logger.info("Registered Google scraper")
+    except ImportError as e:
+        logger.warning(f"Google scraper not available: {e}")
+
 
 # Register scrapers when module is imported
 _register_default_scrapers()

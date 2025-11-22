@@ -1,11 +1,16 @@
 """Base scraper class with common functionality."""
 
+import json
 import time
 import random
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Iterator, Optional, Dict, Any, List
+from pathlib import Path
+from typing import Iterator, Optional, Dict, Any, List, Set, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 from ..core.models import (
     Platform,
@@ -20,9 +25,14 @@ from ..core.exceptions import (
     RateLimitError,
 )
 from ..utils.parsing import parse_datetime_flexible
-from .shared.constants import USER_AGENTS, ACCEPT_LANGUAGES
+from .shared.constants import USER_AGENTS, ACCEPT_LANGUAGES, TIMEOUTS
+from .shared.rate_limiting import RateLimitHandler, RateLimitDetector
 
 logger = logging.getLogger(__name__)
+
+
+# Type alias for progress callback
+ProgressCallback = Callable[[int, int, str], None]  # (current, total, message)
 
 
 class BaseScraper(ABC):
@@ -56,6 +66,16 @@ class BaseScraper(ABC):
         self._current_user_agent = random.choice(USER_AGENTS)
         self._current_accept_language = random.choice(ACCEPT_LANGUAGES)
 
+        # Progress callback (optional)
+        self._progress_callback: Optional[ProgressCallback] = None
+
+        # Rate limit handler
+        self._rate_limit_handler = RateLimitHandler(
+            base_delay=self.retry_delay,
+            max_delay=60.0,
+            max_retries=self.max_retries
+        )
+
         # Proxy configuration (optional)
         self._proxies: List[str] = config.get("proxies", []) if config else []
         self._current_proxy: Optional[str] = None
@@ -69,6 +89,47 @@ class BaseScraper(ABC):
             f"rate_limit={self.requests_per_minute}/min | "
             f"delay={self.min_delay}-{self.max_delay}s"
         )
+
+    def set_progress_callback(self, callback: ProgressCallback) -> None:
+        """
+        Set a callback function for progress updates.
+
+        Args:
+            callback: Function that receives (current, total, message)
+        """
+        self._progress_callback = callback
+
+    def _report_progress(self, current: int, total: int, message: str = "") -> None:
+        """
+        Report extraction progress via callback.
+
+        Args:
+            current: Current progress count
+            total: Total expected count
+            message: Optional status message
+        """
+        if self._progress_callback:
+            try:
+                self._progress_callback(current, total, message)
+            except Exception as e:
+                logger.warning(f"Progress callback error: {e}")
+
+    def __enter__(self) -> "BaseScraper":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Context manager exit with cleanup."""
+        self.close()
+        return False
+
+    def close(self) -> None:
+        """
+        Clean up resources. Override in subclasses.
+
+        Subclasses should call super().close() after their cleanup.
+        """
+        logger.debug(f"BaseScraper.close() called for {self.__class__.__name__}")
 
     def _mask_proxy(self, proxy: str) -> str:
         """Mask proxy URL for logging (hide credentials)."""
@@ -124,14 +185,14 @@ class BaseScraper(ABC):
             logger.warning("Only one proxy available, cannot rotate")
 
     @abstractmethod
-    def _scrape_posts(self, account_id: str, since_date: Optional[datetime], max_posts: int) -> Iterator[ExtractionResult]:
+    def _scrape_posts(self, account_id: str, since_date: Optional[datetime], max_posts: int, known_post_ids: set = None) -> Iterator[ExtractionResult]:
         pass
 
     @abstractmethod
     def _scrape_profile(self, account_id: str) -> Profile:
         pass
 
-    def get_posts_with_comments(self, account_id: str, since_date: Optional[datetime] = None, max_posts: int = 100) -> Iterator[ExtractionResult]:
+    def get_posts_with_comments(self, account_id: str, since_date: Optional[datetime] = None, max_posts: int = 100, known_post_ids: set = None) -> Iterator[ExtractionResult]:
         logger.info(
             f"EXTRACTION START | account={account_id} | "
             f"platform={self.platform.value} | "
@@ -143,7 +204,7 @@ class BaseScraper(ABC):
         total_comments = 0
 
         try:
-            for result in self._scrape_posts(account_id, since_date, max_posts):
+            for result in self._scrape_posts(account_id, since_date, max_posts, known_post_ids):
                 self._human_delay()
                 self._consecutive_errors = 0  # Reset on success
                 posts_extracted += 1
@@ -228,6 +289,162 @@ class BaseScraper(ABC):
 
         backoff = base_delay * exponential * jitter
         return backoff
+
+    def _wait_with_backoff(self, attempt: int, base_delay: float = 2.0, max_delay: float = 60.0) -> None:
+        """
+        Wait with exponential backoff plus jitter.
+
+        Args:
+            attempt: Current attempt number (0-indexed)
+            base_delay: Base delay in seconds
+            max_delay: Maximum delay in seconds
+        """
+        delay = min(base_delay * (2 ** attempt), max_delay)
+        # Add jitter (±25%)
+        jitter = delay * random.uniform(-0.25, 0.25)
+        actual_delay = delay + jitter
+        logger.info(f"RETRY | waiting {actual_delay:.1f}s before attempt {attempt + 2}")
+        time.sleep(actual_delay)
+
+    def _navigate_with_retry(
+        self,
+        page: Any,
+        url: str,
+        content_selectors: List[str],
+        rate_limit_detector: Optional[RateLimitDetector] = None,
+        max_retries: int = 3,
+        wait_after_load: int = 1500
+    ) -> bool:
+        """
+        Navigate to URL with retry and rate limit detection.
+
+        This is a generic navigation method that can be used by all scrapers.
+
+        Args:
+            page: Playwright page object
+            url: URL to navigate to
+            content_selectors: List of selectors to wait for (comma-separated in selector string)
+            rate_limit_detector: Optional rate limit detector for the platform
+            max_retries: Maximum number of retry attempts
+            wait_after_load: Milliseconds to wait after page loads
+
+        Returns:
+            True if navigation succeeded, False otherwise
+
+        Raises:
+            RateLimitError: If rate limited and all retries exhausted
+        """
+        selector_string = ", ".join(content_selectors)
+
+        for attempt in range(max_retries):
+            try:
+                page.goto(url, wait_until="domcontentloaded")
+
+                # Wait for content to load
+                try:
+                    page.wait_for_selector(selector_string, timeout=10000)
+                except Exception:
+                    pass  # Continue even if selector not found
+
+                page.wait_for_timeout(wait_after_load)
+
+                # Check for rate limiting if detector provided
+                if rate_limit_detector and rate_limit_detector.is_rate_limited(page):
+                    if attempt < max_retries - 1:
+                        self._wait_with_backoff(attempt)
+                        continue
+                    else:
+                        raise RateLimitError(
+                            f"{self.platform.value.title()} is rate limiting requests",
+                            platform=self.platform.value
+                        )
+
+                return True
+
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning(f"Navigation attempt {attempt + 1} failed for {url}: {e}")
+                if attempt < max_retries - 1:
+                    self._wait_with_backoff(attempt)
+                else:
+                    return False
+
+        return False
+
+    def _get_checkpoint_path(self, account_id: str) -> Path:
+        """
+        Get checkpoint file path for an account.
+
+        Args:
+            account_id: Account username/ID
+
+        Returns:
+            Path to checkpoint file
+        """
+        checkpoint_dir = Path(self.config.get("data_dir", "data")) / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir / f"{self.platform.value}_{account_id}_checkpoint.json"
+
+    def _load_checkpoint(self, account_id: str) -> Set[str]:
+        """
+        Load checkpoint data (processed post IDs).
+
+        Args:
+            account_id: Account username/ID
+
+        Returns:
+            Set of already processed post IDs
+        """
+        checkpoint_path = self._get_checkpoint_path(account_id)
+        if checkpoint_path.exists():
+            try:
+                with open(checkpoint_path, 'r') as f:
+                    data = json.load(f)
+                    processed_ids = set(data.get("processed_post_ids", []))
+                    logger.info(f"CHECKPOINT | loaded {len(processed_ids)} processed posts from {checkpoint_path}")
+                    return processed_ids
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint: {e}")
+        return set()
+
+    def _save_checkpoint(self, account_id: str, processed_post_ids: Set[str]) -> None:
+        """
+        Save checkpoint data.
+
+        Args:
+            account_id: Account username/ID
+            processed_post_ids: Set of processed post IDs
+        """
+        checkpoint_path = self._get_checkpoint_path(account_id)
+        try:
+            data = {
+                "account_id": account_id,
+                "platform": self.platform.value,
+                "processed_post_ids": list(processed_post_ids),
+                "last_updated": datetime.now().isoformat(),
+                "count": len(processed_post_ids)
+            }
+            with open(checkpoint_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.debug(f"CHECKPOINT | saved {len(processed_post_ids)} processed posts")
+        except Exception as e:
+            logger.warning(f"Failed to save checkpoint: {e}")
+
+    def _clear_checkpoint(self, account_id: str) -> None:
+        """
+        Clear checkpoint file after successful completion.
+
+        Args:
+            account_id: Account username/ID
+        """
+        checkpoint_path = self._get_checkpoint_path(account_id)
+        if checkpoint_path.exists():
+            try:
+                checkpoint_path.unlink()
+                logger.info("CHECKPOINT | cleared checkpoint file")
+            except Exception as e:
+                logger.warning(f"Failed to clear checkpoint: {e}")
 
     def get_profile(self, account_id: str) -> Profile:
         logger.info(f"PROFILE FETCH START | account={account_id} | platform={self.platform.value}")
@@ -448,12 +665,15 @@ class BaseScraper(ABC):
                     platform_id=raw.get("author", ""),
                     username=raw.get("author", ""),
                     display_name=raw.get("author", ""),
+                    profile_url=raw.get("author_url", ""),
                 ),
                 published_at=raw.get("published_at"),
                 likes=raw.get("likes", 0),
                 parent_id=raw.get("parent_id"),
                 replies_count=raw.get("replies_count", 0),
-                raw_data={},
+                raw_data={
+                    "depth": raw.get("depth", 1),
+                },
             )
             comments.append(comment)
 

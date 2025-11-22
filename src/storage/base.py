@@ -7,6 +7,13 @@ from typing import List, Dict, Any, Optional, Type
 from datetime import datetime
 
 from ..core.models import Post, Comment, Profile
+from ..core.exceptions import ValidationError
+from ..utils.output_paths import OutputPathManager
+from ..utils.security import (
+    validate_safe_path,
+    sanitize_filename,
+    validate_path_no_traversal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +32,21 @@ class StorageBackend(ABC):
 
         Args:
             output_dir: Directory for output files
+
+        Raises:
+            ValidationError: If output_dir contains path traversal attempts
         """
-        self.output_dir = Path(output_dir)
+        # Sanitize and validate the output directory
+        output_path = Path(output_dir)
+
+        # Check for path traversal in the input
+        if '..' in str(output_dir):
+            raise ValidationError(
+                f"Invalid output directory: contains path traversal",
+                field="output_dir"
+            )
+
+        self.output_dir = output_path.resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     @abstractmethod
@@ -134,20 +154,46 @@ class StorageBackend(ABC):
         extension: str
     ) -> Path:
         """
-        Generate standardized filename.
+        Generate standardized filename with organized directory structure.
+
+        Output structure:
+            {output_dir}/{account}/{platform}/{YYYY-MM}/{account}_{platform}_{data_type}_{timestamp}.{extension}
 
         Args:
-            account: Account username
+            account: Account username (treated as client)
             platform: Platform name
             data_type: Type of data (posts, comments, profile)
             extension: File extension (json, csv, xlsx)
 
         Returns:
             Path to file
+
+        Raises:
+            ValidationError: If generated path escapes output directory
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{platform}_{account}_{data_type}_{timestamp}.{extension}"
-        return self.output_dir / filename
+        # Sanitize inputs to prevent path traversal
+        safe_account = sanitize_filename(account)
+        safe_platform = sanitize_filename(platform)
+        safe_data_type = sanitize_filename(data_type)
+        safe_extension = sanitize_filename(extension)
+
+        path_manager = OutputPathManager(str(self.output_dir))
+        file_path = path_manager.get_export_path(
+            client=safe_account,
+            platform=safe_platform,
+            data_type=safe_data_type,
+            format=safe_extension
+        )
+
+        # Validate the generated path is within output_dir
+        if not validate_safe_path(self.output_dir, file_path):
+            raise ValidationError(
+                f"Generated path escapes output directory: {file_path}",
+                field="output_path"
+            )
+
+        path_manager.ensure_dir(file_path)
+        return file_path
 
     @staticmethod
     def post_to_dict(post: Post) -> Dict[str, Any]:

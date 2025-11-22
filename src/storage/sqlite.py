@@ -3,9 +3,9 @@
 import sqlite3
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple, Set
 
 from ..core.models import (
     Comment,
@@ -15,24 +15,40 @@ from ..core.models import (
     Platform,
     ExtractionStats,
 )
-from ..core.exceptions import StorageError
+from ..core.exceptions import StorageError, ValidationError
+from ..config.paths import get_paths
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["SQLiteStorage"]
 
 
 class SQLiteStorage:
     """SQLite storage backend for comments, posts, and profiles."""
 
-    def __init__(self, db_path: str = "data/extractor.db"):
+    def __init__(self, db_path: str = None):
         """
         Initialize SQLite storage.
 
         Args:
-            db_path: Path to SQLite database file
-        """
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            db_path: Path to SQLite database file (uses centralized config if None)
 
+        Raises:
+            ValidationError: If db_path contains path traversal attempts
+        """
+        if db_path is None:
+            self.db_path = get_paths().database_path
+        else:
+            # Check for path traversal
+            if '..' in str(db_path):
+                raise ValidationError(
+                    "Invalid database path: contains path traversal",
+                    field="db_path"
+                )
+            self.db_path = Path(db_path)
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
 
     def _init_database(self):
@@ -300,7 +316,7 @@ class SQLiteStorage:
                     profile.posts_count,
                     profile.is_verified,
                     json.dumps(profile.raw_data) if profile.raw_data else None,
-                    datetime.utcnow().isoformat()
+                    datetime.now(timezone.utc).isoformat()
                 ))
 
                 conn.commit()
@@ -550,6 +566,63 @@ class SQLiteStorage:
             logger.error(f"Database error getting comment count: {e}")
             return 0
 
+    def get_post_comment_count(
+        self,
+        client: str,
+        post_id: str
+    ) -> int:
+        """
+        Get comment count for a specific post.
+
+        Args:
+            client: Client name
+            post_id: Post platform ID
+
+        Returns:
+            Number of comments for this post
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) as count FROM comments
+                    WHERE client = ? AND post_id = ?
+                """, (client, post_id))
+                row = cursor.fetchone()
+                return row["count"] if row else 0
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting post comment count: {e}")
+            return 0
+
+    def get_posts_with_comments_set(
+        self,
+        client: str,
+        platform: str
+    ) -> set:
+        """
+        Get set of post IDs that already have comments.
+
+        Args:
+            client: Client name
+            platform: Platform name
+
+        Returns:
+            Set of post_ids that have at least one comment
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT DISTINCT post_id FROM comments
+                    WHERE client = ? AND platform = ?
+                """, (client, platform))
+                return {row["post_id"] for row in cursor.fetchall()}
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting posts with comments: {e}")
+            return set()
+
     def get_duplicate_comments(
         self,
         client: str,
@@ -700,7 +773,7 @@ class SQLiteStorage:
             logger.error(f"Database error removing duplicates: {e}")
             return 0
 
-    def _row_to_comment(self, row) -> Comment:
+    def _row_to_comment(self, row: sqlite3.Row) -> Comment:
         """Convert database row to Comment model."""
         return Comment(
             platform=Platform(row["platform"]),
@@ -721,7 +794,7 @@ class SQLiteStorage:
             raw_data=json.loads(row["raw_data"]) if row["raw_data"] else {}
         )
 
-    def _row_to_post(self, row) -> Post:
+    def _row_to_post(self, row: sqlite3.Row) -> Post:
         """Convert database row to Post model."""
         return Post(
             platform=Platform(row["platform"]),
@@ -737,3 +810,386 @@ class SQLiteStorage:
             media_urls=json.loads(row["media_urls"]) if row["media_urls"] else [],
             raw_data=json.loads(row["raw_data"]) if row["raw_data"] else {}
         )
+
+    # Batch save methods for StorageBackend compatibility
+
+    def save_comments_batch(
+        self,
+        client: str,
+        comments: List[Comment],
+        batch_size: int = 500
+    ) -> Tuple[int, int]:
+        """
+        Save multiple comments using batch insert for better performance.
+
+        Args:
+            client: Client name
+            comments: List of comments to save
+            batch_size: Number of comments to insert per batch
+
+        Returns:
+            Tuple of (saved_count, duplicate_count)
+        """
+        if not comments:
+            return 0, 0
+
+        total_saved = 0
+        total_duplicates = 0
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Process in batches
+                for i in range(0, len(comments), batch_size):
+                    batch = comments[i:i + batch_size]
+
+                    # Prepare batch data
+                    batch_data = [
+                        (
+                            client,
+                            comment.platform.value,
+                            comment.platform_id,
+                            comment.post_id,
+                            comment.text,
+                            comment.author.platform_id,
+                            comment.author.username,
+                            comment.author.display_name,
+                            comment.author.profile_url,
+                            comment.author.is_verified,
+                            comment.published_at.isoformat() if comment.published_at else None,
+                            comment.likes,
+                            comment.replies_count,
+                            comment.parent_id,
+                            json.dumps(comment.raw_data) if comment.raw_data else None
+                        )
+                        for comment in batch
+                    ]
+
+                    # Execute batch insert
+                    cursor.executemany("""
+                        INSERT OR IGNORE INTO comments (
+                            client, platform, platform_id, post_id, text,
+                            author_id, author_username, author_display_name,
+                            author_profile_url, author_is_verified,
+                            published_at, likes, replies_count, parent_id, raw_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, batch_data)
+
+                    batch_saved = cursor.rowcount
+                    total_saved += batch_saved
+                    total_duplicates += len(batch) - batch_saved
+
+                conn.commit()
+
+            logger.info(
+                f"Batch saved {total_saved} comments for {client} "
+                f"({total_duplicates} duplicates skipped)"
+            )
+            return total_saved, total_duplicates
+
+        except sqlite3.Error as e:
+            raise StorageError(
+                f"Database error in batch save: {e}",
+                operation="save_comments_batch",
+                original_error=e
+            )
+
+    def save_posts_batch(
+        self,
+        client: str,
+        posts: List[Post],
+        batch_size: int = 500
+    ) -> Tuple[int, int]:
+        """
+        Save multiple posts using batch insert for better performance.
+
+        Args:
+            client: Client name
+            posts: List of posts to save
+            batch_size: Number of posts to insert per batch
+
+        Returns:
+            Tuple of (saved_count, duplicate_count)
+        """
+        if not posts:
+            return 0, 0
+
+        total_saved = 0
+        total_duplicates = 0
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Process in batches
+                for i in range(0, len(posts), batch_size):
+                    batch = posts[i:i + batch_size]
+
+                    # Prepare batch data
+                    batch_data = [
+                        (
+                            client,
+                            post.platform.value,
+                            post.platform_id,
+                            post.account_id,
+                            post.url,
+                            post.text,
+                            post.published_at.isoformat() if post.published_at else None,
+                            post.likes,
+                            post.comments_count,
+                            post.shares,
+                            post.media_type,
+                            json.dumps(post.media_urls) if post.media_urls else None,
+                            json.dumps(post.raw_data) if post.raw_data else None
+                        )
+                        for post in batch
+                    ]
+
+                    # Execute batch insert
+                    cursor.executemany("""
+                        INSERT OR IGNORE INTO posts (
+                            client, platform, platform_id, account_id, url, text,
+                            published_at, likes, comments_count, shares,
+                            media_type, media_urls, raw_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, batch_data)
+
+                    batch_saved = cursor.rowcount
+                    total_saved += batch_saved
+                    total_duplicates += len(batch) - batch_saved
+
+                conn.commit()
+
+            logger.info(
+                f"Batch saved {total_saved} posts for {client} "
+                f"({total_duplicates} duplicates skipped)"
+            )
+            return total_saved, total_duplicates
+
+        except sqlite3.Error as e:
+            raise StorageError(
+                f"Database error in batch save: {e}",
+                operation="save_posts_batch",
+                original_error=e
+            )
+
+    def exists_comment(self, platform: str, platform_id: str) -> bool:
+        """
+        Check if a comment exists in the database.
+
+        Args:
+            platform: Platform name
+            platform_id: Platform-specific comment ID
+
+        Returns:
+            True if comment exists
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT 1 FROM comments
+                    WHERE platform = ? AND platform_id = ?
+                    LIMIT 1
+                """, (platform, platform_id))
+                return cursor.fetchone() is not None
+        except sqlite3.Error:
+            return False
+
+    def exists_comments_batch(
+        self,
+        platform: str,
+        platform_ids: List[str]
+    ) -> Dict[str, bool]:
+        """
+        Check if multiple comments exist in the database.
+
+        More efficient than calling exists_comment for each ID.
+
+        Args:
+            platform: Platform name
+            platform_ids: List of platform-specific comment IDs
+
+        Returns:
+            Dictionary mapping platform_id to exists (True/False)
+        """
+        if not platform_ids:
+            return {}
+
+        result = {pid: False for pid in platform_ids}
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # SQLite has a limit on number of placeholders (~999),
+                # so we batch the queries
+                batch_size = 500
+                for i in range(0, len(platform_ids), batch_size):
+                    batch = platform_ids[i:i + batch_size]
+                    placeholders = ",".join("?" * len(batch))
+
+                    cursor.execute(f"""
+                        SELECT platform_id FROM comments
+                        WHERE platform = ? AND platform_id IN ({placeholders})
+                    """, [platform] + batch)
+
+                    for row in cursor.fetchall():
+                        result[row["platform_id"]] = True
+
+            return result
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error checking comment existence: {e}")
+            return result
+
+    def get_existing_comment_ids(
+        self,
+        client: str,
+        platform: str,
+        post_ids: Optional[List[str]] = None
+    ) -> set:
+        """
+        Get set of existing comment IDs for efficient duplicate checking.
+
+        Args:
+            client: Client name
+            platform: Platform name
+            post_ids: Optional list of post IDs to filter by
+
+        Returns:
+            Set of existing platform_ids
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                if post_ids:
+                    # Filter by specific posts
+                    placeholders = ",".join("?" * len(post_ids))
+                    cursor.execute(f"""
+                        SELECT platform_id FROM comments
+                        WHERE client = ? AND platform = ? AND post_id IN ({placeholders})
+                    """, [client, platform] + post_ids)
+                else:
+                    cursor.execute("""
+                        SELECT platform_id FROM comments
+                        WHERE client = ? AND platform = ?
+                    """, (client, platform))
+
+                return {row["platform_id"] for row in cursor.fetchall()}
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting existing comment IDs: {e}")
+            return set()
+
+    def save_posts(
+        self,
+        posts: List[Post],
+        account: str,
+        platform: str
+    ) -> str:
+        """
+        Save multiple posts to storage.
+
+        This method provides compatibility with StorageBackend interface.
+        Uses batch operations for better performance.
+
+        Args:
+            posts: List of Post objects
+            account: Account username (used as client)
+            platform: Platform name
+
+        Returns:
+            Description of saved data
+        """
+        saved_count, _ = self.save_posts_batch(account, posts)
+        return f"sqlite:{self.db_path}:posts:{account}:{platform}"
+
+    def save_comments(
+        self,
+        comments: List[Comment],
+        account: str,
+        platform: str
+    ) -> str:
+        """
+        Save multiple comments to storage.
+
+        This method provides compatibility with StorageBackend interface.
+        Uses batch operations for better performance.
+
+        Args:
+            comments: List of Comment objects
+            account: Account username (used as client)
+            platform: Platform name
+
+        Returns:
+            Description of saved data
+        """
+        saved_count, _ = self.save_comments_batch(account, comments)
+        return f"sqlite:{self.db_path}:comments:{account}:{platform}"
+
+    def save_extraction_result(
+        self,
+        posts: List[Post],
+        comments: List[Comment],
+        profile: Optional[Profile],
+        account: str,
+        platform: str
+    ) -> Dict[str, str]:
+        """
+        Save complete extraction result.
+
+        This method provides compatibility with StorageBackend interface.
+
+        Args:
+            posts: List of Post objects
+            comments: List of Comment objects
+            profile: Optional Profile object
+            account: Account username (used as client)
+            platform: Platform name
+
+        Returns:
+            Dictionary mapping data type to description
+        """
+        results = {}
+
+        if posts:
+            results["posts"] = self.save_posts(posts, account, platform)
+
+        if comments:
+            results["comments"] = self.save_comments(comments, account, platform)
+
+        if profile:
+            self.save_profile(account, profile)
+            results["profile"] = f"sqlite:{self.db_path}:profile:{account}:{platform}"
+
+        return results
+
+
+class SQLiteStorageAdapter:
+    """
+    Adapter to make SQLiteStorage compatible with StorageFactory.
+
+    StorageFactory expects backends that take output_dir as constructor arg,
+    but SQLiteStorage takes db_path. This adapter bridges that gap.
+    """
+
+    def __new__(cls, output_dir: str):
+        """
+        Create SQLiteStorage with db path derived from output_dir.
+
+        Args:
+            output_dir: Directory for output files (db file placed inside)
+
+        Returns:
+            SQLiteStorage instance
+        """
+        db_path = Path(output_dir) / "storage.db"
+        return SQLiteStorage(str(db_path))
+
+
+# Register SQLiteStorage with StorageFactory for unified access
+from .base import StorageFactory
+StorageFactory.register("sqlite", SQLiteStorageAdapter)

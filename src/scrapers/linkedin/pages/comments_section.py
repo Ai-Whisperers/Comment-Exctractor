@@ -22,6 +22,7 @@ class CommentsSection(BasePage):
         # Open comments section
         self._expand_comments()
         self._load_more_comments()
+        self._expand_replies()
         comments = self._extract_comments_js(post_id)
 
         logger.info(f"EXTRACTED {len(comments)} COMMENTS | post_id={post_id}")
@@ -36,16 +37,45 @@ class CommentsSection(BasePage):
         except Exception as e:
             logger.debug(f"Failed to expand comments: {e}")
 
-    def _load_more_comments(self, max_loads: int = 5) -> None:
+    def _load_more_comments(self, max_loads: int = 10) -> None:
+        """Load more comments by clicking the load more button."""
         for i in range(max_loads):
             try:
+                # Try primary selector
                 if self.is_visible(Selectors.Comments.LOAD_MORE, timeout=1000):
                     self.click(Selectors.Comments.LOAD_MORE)
+                    self.wait(1500)
+                # Try alternative selector
+                elif self.is_visible(Selectors.Comments.LOAD_MORE_ALT, timeout=500):
+                    self.click(Selectors.Comments.LOAD_MORE_ALT)
                     self.wait(1500)
                 else:
                     break
             except Exception:
                 break
+
+    def _expand_replies(self, max_expands: int = 20) -> None:
+        """Expand reply threads to get nested comments."""
+        expanded = 0
+        for i in range(max_expands):
+            try:
+                # Try primary selector
+                if self.is_visible(Selectors.Comments.SHOW_REPLIES, timeout=500):
+                    self.click(Selectors.Comments.SHOW_REPLIES)
+                    self.wait(1000)
+                    expanded += 1
+                # Try alternative selector
+                elif self.is_visible(Selectors.Comments.SHOW_REPLIES_ALT, timeout=500):
+                    self.click(Selectors.Comments.SHOW_REPLIES_ALT)
+                    self.wait(1000)
+                    expanded += 1
+                else:
+                    break
+            except Exception:
+                break
+
+        if expanded > 0:
+            logger.debug(f"Expanded {expanded} reply threads")
 
     def _extract_comments_js(self, post_id: str) -> List[Dict[str, Any]]:
         try:
@@ -76,10 +106,38 @@ class CommentsSection(BasePage):
                                 timestamp = timeElem.getAttribute('datetime');
                             }
 
+                            // Extract likes count
+                            let likes = 0;
+                            const likesElem = comment.querySelector('button.comments-comment-social-bar__reactions-count');
+                            if (likesElem) {
+                                const likesText = likesElem.textContent.trim();
+                                const likesMatch = likesText.match(/\\d+/);
+                                if (likesMatch) {
+                                    likes = parseInt(likesMatch[0], 10);
+                                }
+                            }
+
+                            // Check if this is a reply (nested comment)
+                            const isReply = comment.closest('article.comments-reply-item') !== null;
+
+                            // Count replies to this comment
+                            let repliesCount = 0;
+                            const repliesBtn = comment.querySelector('button[aria-label*="replies"]');
+                            if (repliesBtn) {
+                                const repliesText = repliesBtn.textContent.trim();
+                                const repliesMatch = repliesText.match(/\\d+/);
+                                if (repliesMatch) {
+                                    repliesCount = parseInt(repliesMatch[0], 10);
+                                }
+                            }
+
                             comments.push({
                                 author: author,
                                 text: text,
                                 timestamp: timestamp,
+                                likes: likes,
+                                replies_count: repliesCount,
+                                is_reply: isReply,
                                 index: index
                             });
                         } catch (e) {}
@@ -90,6 +148,7 @@ class CommentsSection(BasePage):
 
             processed = []
             seen_texts = set()
+            parent_id = None
 
             for i, comment in enumerate(comments_data):
                 text = comment.get('text', '').strip()
@@ -104,14 +163,21 @@ class CommentsSection(BasePage):
                     except Exception:
                         pass
 
+                comment_id = f"{post_id}_c{i}"
+                is_reply = comment.get('is_reply', False)
+
+                # Track parent for replies
+                if not is_reply:
+                    parent_id = comment_id
+
                 processed.append({
-                    'id': f"{post_id}_c{i}",
+                    'id': comment_id,
                     'author': comment.get('author', 'unknown'),
                     'text': text,
                     'published_at': timestamp,
-                    'likes': 0,
-                    'parent_id': None,
-                    'replies_count': 0,
+                    'likes': comment.get('likes', 0),
+                    'parent_id': parent_id if is_reply else None,
+                    'replies_count': comment.get('replies_count', 0),
                 })
 
             return processed

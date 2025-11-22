@@ -26,6 +26,19 @@ class TIMEOUTS:
     PAGE_LOAD = 30000
     NAVIGATION = 60000
 
+    # Rate limiting
+    RATE_LIMIT_WAIT = 60000
+    RATE_LIMIT_EXTRA_MIN = 60000   # 1 minute
+    RATE_LIMIT_EXTRA_MAX = 180000  # 3 minutes
+
+    # Retry delays
+    RETRY_BASE = 2000
+    RETRY_MAX = 60000
+
+    # Content loading
+    CONTENT_LOAD = 1500
+    DYNAMIC_CONTENT = 3000
+
 
 class VIEWPORTS:
     """Standard viewport configurations."""

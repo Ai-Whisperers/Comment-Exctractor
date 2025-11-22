@@ -1,6 +1,6 @@
 """Abstract protocols/interfaces for the comment extractor."""
 
-from typing import Protocol, Iterator, Optional, List, Dict, Any
+from typing import Protocol, Iterator, Optional, List, Dict, Any, runtime_checkable
 from datetime import datetime
 
 from .models import (
@@ -14,8 +14,19 @@ from .models import (
 )
 
 
+@runtime_checkable
 class ScraperProtocol(Protocol):
-    """Protocol for platform scrapers."""
+    """
+    Protocol for platform scrapers.
+
+    All scraper implementations must conform to this interface.
+    Supports context manager protocol for proper resource cleanup.
+
+    Example:
+        >>> with FacebookScraper(config) as scraper:
+        ...     for result in scraper.get_posts_with_comments("page_id"):
+        ...         process(result)
+    """
 
     platform: Platform
 
@@ -23,7 +34,8 @@ class ScraperProtocol(Protocol):
         self,
         account_id: str,
         since_date: Optional[datetime] = None,
-        max_posts: int = 100
+        max_posts: int = 100,
+        known_post_ids: Optional[set] = None
     ) -> Iterator[ExtractionResult]:
         """
         Get posts with their comments from an account.
@@ -32,6 +44,7 @@ class ScraperProtocol(Protocol):
             account_id: Username, page ID, or identifier
             since_date: Only get posts after this date (for incremental extraction)
             max_posts: Maximum number of posts to retrieve
+            known_post_ids: Set of already extracted post IDs to skip
 
         Yields:
             ExtractionResult with post and its comments
@@ -65,6 +78,22 @@ class ScraperProtocol(Protocol):
         Yields:
             Comment objects
         """
+        ...
+
+    def close(self) -> None:
+        """
+        Clean up resources (browser, connections, etc.).
+
+        Should be called when done with the scraper.
+        """
+        ...
+
+    def __enter__(self) -> "ScraperProtocol":
+        """Context manager entry."""
+        ...
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Context manager exit with cleanup."""
         ...
 
 

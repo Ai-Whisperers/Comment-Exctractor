@@ -60,8 +60,39 @@ class LoginPage(BasePage):
         self.click(Selectors.Login.LOGIN_BUTTON)
         self.wait(3000)
 
-        # Wait for navigation
-        self.wait_for_load()
+        # Wait for navigation with extended timeout for 2FA/verification
+        try:
+            self.wait_for_load(timeout=30000)
+        except Exception:
+            logger.debug("LOGIN | load timeout, continuing...")
+
+        # Wait longer for manual verification if needed
+        max_verification_wait = 120  # 2 minutes for manual verification
+        check_interval = 5  # Check every 5 seconds
+        elapsed = 0
+
+        while elapsed < max_verification_wait:
+            # Check if we're past the login
+            if self.is_logged_in():
+                break
+
+            # Check for checkpoint - wait for user to complete
+            if Selectors.URLs.CHECKPOINT in self.current_url:
+                logger.info(f"LOGIN | security checkpoint detected - waiting for manual verification ({elapsed}s/{max_verification_wait}s)")
+                self.wait(check_interval * 1000)
+                elapsed += check_interval
+                continue
+
+            # Check if still on login page
+            if Selectors.URLs.LOGIN_PATH in self.current_url:
+                logger.debug(f"LOGIN | still on login page, waiting... ({elapsed}s)")
+                self.wait(check_interval * 1000)
+                elapsed += check_interval
+                continue
+
+            # Neither checkpoint nor login page - might be logged in or elsewhere
+            break
+
         self.human_delay(1000, 2000)
 
         # Dismiss any post-login popups
@@ -71,7 +102,21 @@ class LoginPage(BasePage):
         if not self.is_logged_in():
             # Check for checkpoint
             if Selectors.URLs.CHECKPOINT in self.current_url:
-                raise Exception("Security checkpoint detected - manual verification required")
+                # Save HTML debug on checkpoint
+                self._get_debug_logger().save_on_login_failure(
+                    page=self.page,
+                    reason="Security checkpoint timeout",
+                    username=email,
+                    platform="facebook"
+                )
+                raise Exception("Security checkpoint detected - manual verification required (timeout)")
+            # Save HTML debug on login failure
+            self._get_debug_logger().save_on_login_failure(
+                page=self.page,
+                reason="Login verification failed",
+                username=email,
+                platform="facebook"
+            )
             raise Exception("Login verification failed")
 
         logger.info("LOGIN SUCCESS")

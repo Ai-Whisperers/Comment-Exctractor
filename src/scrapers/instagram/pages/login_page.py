@@ -20,8 +20,10 @@ class LoginPage(BasePage):
         Returns:
             Self for chaining
         """
-        super().navigate(Selectors.URLs.LOGIN)
-        self.wait(2000)
+        # Use domcontentloaded instead of networkidle to avoid timeout issues
+        # Instagram keeps making background requests that prevent networkidle
+        super().navigate(Selectors.URLs.LOGIN, wait_until="domcontentloaded")
+        self.wait(3000)
         return self
 
     def handle_cookie_consent(self) -> "LoginPage":
@@ -236,15 +238,36 @@ class LoginPage(BasePage):
         error = self.get_error_message()
         if error:
             logger.error(f"LOGIN ERROR | {error}")
+            # Save HTML debug on login error
+            self._get_debug_logger().save_on_login_failure(
+                page=self.page,
+                reason=error,
+                username=username,
+                platform="instagram"
+            )
             raise Exception(f"Login failed: {error}")
 
         # Check for challenge
         if self.is_challenge_required():
+            # Save HTML debug on challenge required
+            self._get_debug_logger().save_on_login_failure(
+                page=self.page,
+                reason="Challenge/verification required",
+                username=username,
+                platform="instagram"
+            )
             raise Exception("Login requires verification (CAPTCHA, 2FA, or suspicious login challenge)")
 
         # Check if still on login page
         if self.is_still_on_login_page():
             if self.has_incorrect_credentials():
+                # Save HTML debug on incorrect credentials
+                self._get_debug_logger().save_on_login_failure(
+                    page=self.page,
+                    reason="Incorrect credentials",
+                    username=username,
+                    platform="instagram"
+                )
                 raise Exception("Incorrect username or password")
             self.wait(5000)  # Wait longer
 

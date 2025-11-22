@@ -233,9 +233,22 @@ class PostModal(BasePage):
         """
         current_id = self.get_post_id()
         self.press_key("ArrowRight")
-        self.wait(2000)
-        self.wait_for_load(timeout=5000)
 
+        # Smart wait: poll for post ID change instead of fixed wait
+        max_wait_ms = 5000
+        poll_interval_ms = 200
+        waited = 0
+
+        while waited < max_wait_ms:
+            self.wait(poll_interval_ms)
+            waited += poll_interval_ms
+            new_id = self.get_post_id()
+            if new_id and new_id != current_id:
+                # Post changed, give a small buffer for content to load
+                self.wait(500)
+                return True
+
+        # Timeout - check one more time
         new_id = self.get_post_id()
         return new_id != current_id
 
@@ -248,9 +261,22 @@ class PostModal(BasePage):
         """
         current_id = self.get_post_id()
         self.press_key("ArrowLeft")
-        self.wait(2000)
-        self.wait_for_load(timeout=5000)
 
+        # Smart wait: poll for post ID change instead of fixed wait
+        max_wait_ms = 5000
+        poll_interval_ms = 200
+        waited = 0
+
+        while waited < max_wait_ms:
+            self.wait(poll_interval_ms)
+            waited += poll_interval_ms
+            new_id = self.get_post_id()
+            if new_id and new_id != current_id:
+                # Post changed, give a small buffer for content to load
+                self.wait(500)
+                return True
+
+        # Timeout - check one more time
         new_id = self.get_post_id()
         return new_id != current_id
 

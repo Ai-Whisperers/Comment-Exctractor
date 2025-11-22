@@ -47,27 +47,22 @@ class CommentsSection(BasePage):
         logger.debug(f"COMMENTS | loaded more {clicks} times")
         return clicks
 
-    def get_comments(self) -> List[Dict[str, Any]]:
+    def _get_comment_debug_info(self) -> Dict[str, Any]:
         """
-        Extract all visible comments.
+        Collect debug information about comment elements on the page.
 
         Returns:
-            List of comment dictionaries
+            Dictionary with container info, time elements count, and samples
         """
-        comments = []
-
-        # Debug: Log what we can find on the page
-        debug_info = self.evaluate('''
+        return self.evaluate('''
             () => {
                 const container = document.querySelector('div[role="dialog"]') || document.querySelector('article') || document.querySelector('main');
                 if (!container) return { error: 'No container found' };
 
-                // Find elements that have time (timestamps are key for comments)
                 const timeElements = container.querySelectorAll('time');
                 const commentCandidates = [];
 
                 timeElements.forEach((time, i) => {
-                    // Go up to find the parent that contains the full comment
                     let parent = time.parentElement;
                     for (let j = 0; j < 5 && parent; j++) {
                         const hasAuthorLink = parent.querySelector('a[href^="/"][href$="/"]');
@@ -87,7 +82,6 @@ class CommentsSection(BasePage):
                     }
                 });
 
-                // Get span samples
                 const spanWithText = [];
                 container.querySelectorAll('span').forEach(s => {
                     if (s.innerText && s.innerText.length > 20 && s.innerText.length < 500) {
@@ -106,125 +100,175 @@ class CommentsSection(BasePage):
                 };
             }
         ''')
+
+    def get_comments(self) -> List[Dict[str, Any]]:
+        """
+        Extract all visible comments.
+
+        Returns:
+            List of comment dictionaries
+        """
+        # Debug: Log what we can find on the page
+        debug_info = self._get_comment_debug_info()
         logger.info(f"COMMENT DEBUG | {debug_info}")
 
-        # Extract comments by finding comment blocks with author + text + timestamp
-        raw_comments = self.evaluate('''
+        # Extract raw comments from the DOM
+        raw_comments = self._extract_raw_comments()
+
+        # Process and structure the comments
+        comments = self._process_raw_comments(raw_comments)
+
+        # Log extraction statistics
+        self._log_extraction_stats(comments, raw_comments)
+
+        return comments
+
+    def _extract_raw_comments(self) -> List[Dict[str, Any]]:
+        """
+        Extract raw comment data from the page using JavaScript.
+
+        Returns:
+            List of raw comment dictionaries with author, text, datetime, etc.
+        """
+        return self.evaluate('''
             () => {
                 const comments = [];
                 const container = document.querySelector('div[role="dialog"]') || document.querySelector('article') || document.querySelector('main');
                 if (!container) return comments;
 
                 const seenTexts = new Set();
+                const seenCommentDivs = new Set();
                 const timeElements = container.querySelectorAll('time');
 
-                // Skip first time element (it's usually the post itself)
                 for (let i = 1; i < timeElements.length; i++) {
                     const timeEl = timeElements[i];
-
-                    // Go up to find comment container (try multiple levels)
                     let commentDiv = timeEl.parentElement;
                     let foundComment = false;
 
                     for (let level = 0; level < 8 && commentDiv && !foundComment; level++) {
-                        // Look for author link in this container
-                        const links = commentDiv.querySelectorAll('a[href^="/"]');
-                        let author = '';
-                        let authorLink = null;
-
-                        for (const link of links) {
-                            const href = link.getAttribute('href');
-                            if (href && href.match(/^\\/[^\\/]+\\/?$/) &&
-                                !href.includes('/p/') && !href.includes('/reel/') && !href.includes('/explore/')) {
-                                const linkText = link.textContent?.trim() || '';
-                                if (linkText && linkText.length > 0 && linkText.length < 50) {
-                                    author = linkText.replace(/Verified$/, '').trim();
-                                    authorLink = link;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!author) {
+                        if (seenCommentDivs.has(commentDiv)) {
                             commentDiv = commentDiv.parentElement;
                             continue;
                         }
 
-                        // Find comment text - look for spans with class containing comment text
-                        let text = '';
-
-                        // First try to find the specific comment text span
-                        const textSpans = commentDiv.querySelectorAll('span[dir="auto"]');
-                        for (const span of textSpans) {
-                            const spanText = span.innerText?.trim();
-                            if (!spanText || spanText.length <= 1) continue;
-                            // Skip if it's just the author name
-                            if (spanText === author) continue;
-                            // Skip timestamps and actions
-                            if (spanText.match(/^\\d+[hdwms]?$/)) continue;
-                            if (spanText.match(/^\\d+\\s*(like|repl|day|hour|week|ago)/i)) continue;
-                            if (spanText.match(/^View\\s+(all)?/i)) continue;
-                            if (spanText.match(/^Hide\\s+repl/i)) continue;
-                            if (['like', 'reply', 'translate', 'verified'].includes(spanText.toLowerCase())) continue;
-
-                            // This is likely the comment text
-                            if (spanText.length > text.length && spanText.length < 1000) {
-                                text = spanText;
+                        // Find author
+                        const authorData = (() => {
+                            const links = commentDiv.querySelectorAll('a[href^="/"]');
+                            for (const link of links) {
+                                const href = link.getAttribute('href');
+                                if (href && href.match(/^\\/[^\\/]+\\/?$/) &&
+                                    !href.includes('/p/') && !href.includes('/reel/') && !href.includes('/explore/')) {
+                                    const linkText = link.textContent?.trim() || '';
+                                    if (linkText && linkText.length > 0 && linkText.length < 50) {
+                                        return {
+                                            author: linkText.replace(/Verified$/, '').trim(),
+                                            authorUrl: 'https://www.instagram.com' + href
+                                        };
+                                    }
+                                }
                             }
+                            return null;
+                        })();
+
+                        if (!authorData) {
+                            commentDiv = commentDiv.parentElement;
+                            continue;
                         }
 
-                        // Fallback: look for any span with meaningful content
-                        if (!text) {
-                            const allSpans = commentDiv.querySelectorAll('span');
-                            for (const span of allSpans) {
+                        // Find comment text
+                        const text = (() => {
+                            let bestText = '';
+                            const textSpans = commentDiv.querySelectorAll('span[dir="auto"]');
+                            for (const span of textSpans) {
                                 const spanText = span.innerText?.trim();
                                 if (!spanText || spanText.length <= 1) continue;
-                                if (spanText === author) continue;
+                                if (spanText === authorData.author) continue;
                                 if (spanText.match(/^\\d+[hdwms]?$/)) continue;
                                 if (spanText.match(/^\\d+\\s*(like|repl|day|hour|week|ago)/i)) continue;
                                 if (spanText.match(/^View\\s+(all)?/i)) continue;
                                 if (spanText.match(/^Hide\\s+repl/i)) continue;
                                 if (['like', 'reply', 'translate', 'verified'].includes(spanText.toLowerCase())) continue;
 
-                                // Check if this is a leaf span (no nested spans with text)
-                                const hasNestedText = span.querySelector('span')?.innerText?.trim();
-                                if (!hasNestedText && spanText.length > text.length && spanText.length < 1000) {
-                                    text = spanText;
+                                const isInNestedComment = span.closest('li ul li');
+                                if (isInNestedComment && !commentDiv.contains(isInNestedComment)) continue;
+
+                                const nestedText = span.querySelector('span')?.innerText?.trim() || '';
+                                const isLeaf = !nestedText || nestedText === spanText;
+
+                                if (isLeaf && spanText.length > bestText.length && spanText.length < 1000) {
+                                    bestText = spanText;
                                 }
                             }
-                        }
+                            return bestText;
+                        })();
 
-                        // Get timestamp
-                        const datetime = timeEl.getAttribute('datetime');
+                        // Get likes count
+                        const likes = (() => {
+                            const spans = commentDiv.querySelectorAll('span');
+                            for (const span of spans) {
+                                const text = (span.textContent || '').trim();
+                                let match = text.match(/(\\d+)\\s*likes?/i);
+                                if (match) return parseInt(match[1]);
 
-                        // Get likes
-                        let likes = 0;
-                        const spans = commentDiv.querySelectorAll('span');
-                        for (const span of spans) {
-                            const match = (span.textContent || '').match(/(\\d+)\\s*like/i);
-                            if (match) {
-                                likes = parseInt(match[1]);
-                                break;
+                                if (/^\\d{1,4}$/.test(text) && !text.includes(':')) {
+                                    const parent = span.parentElement;
+                                    if (parent && (
+                                        parent.tagName === 'BUTTON' ||
+                                        parent.getAttribute('role') === 'button' ||
+                                        parent.closest('button') ||
+                                        parent.querySelector('svg') ||
+                                        parent.parentElement?.querySelector('svg')
+                                    )) {
+                                        return parseInt(text);
+                                    }
+                                }
                             }
-                        }
+                            return 0;
+                        })();
 
-                        // Check if this is a reply (nested in _a9yo class or has reply indicator)
-                        const isReply = !!commentDiv.closest('ul._a9yo') ||
-                                       !!commentDiv.closest('li._a9ye') ||
-                                       (commentDiv.querySelector('li') && commentDiv.querySelector('li').classList.contains('_a9ye'));
+                        // Check if reply
+                        const replyInfo = (() => {
+                            let ulDepth = 0;
+                            let parent = commentDiv;
+                            while (parent) {
+                                if (parent.tagName === 'UL') ulDepth++;
+                                parent = parent.parentElement;
+                            }
 
-                        // Add if we found meaningful content
-                        if (author && text && text.length > 0) {
-                            const key = author + ':' + text.substring(0, 50);
-                            if (!seenTexts.has(key)) {
-                                seenTexts.add(key);
+                            const startsWithMention = text.trim().startsWith('@');
+
+                            let liCount = 0;
+                            let checkParent = commentDiv;
+                            while (checkParent) {
+                                if (checkParent.tagName === 'LI') liCount++;
+                                checkParent = checkParent.parentElement;
+                            }
+
+                            return {
+                                isReply: ulDepth > 1 || liCount > 1 || startsWithMention,
+                                ulDepth,
+                                liCount,
+                                startsWithMention
+                            };
+                        })();
+
+                        if (authorData.author && text && text.length > 0) {
+                            const textKey = text.replace(/^@[\\w.]+\\s*/, '').trim().substring(0, 100);
+
+                            if (!seenTexts.has(textKey)) {
+                                seenTexts.add(textKey);
+                                seenCommentDivs.add(commentDiv);
                                 comments.push({
                                     index: i,
-                                    author: author,
+                                    author: authorData.author,
+                                    author_url: authorData.authorUrl,
                                     text: text,
-                                    datetime: datetime,
+                                    datetime: timeEl.getAttribute('datetime'),
                                     likes: likes,
-                                    is_reply: isReply
+                                    is_reply: replyInfo.isReply,
+                                    ul_depth: replyInfo.ulDepth,
+                                    nested_li_count: replyInfo.liCount,
+                                    starts_with_mention: replyInfo.startsWithMention
                                 });
                                 foundComment = true;
                             }
@@ -238,32 +282,51 @@ class CommentsSection(BasePage):
             }
         ''')
 
-        # Process raw comments
+    def _process_raw_comments(self, raw_comments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Process raw comment data into structured comment objects.
+
+        Args:
+            raw_comments: Raw comment data from JavaScript extraction
+
+        Returns:
+            List of processed comment dictionaries
+        """
+        comments = []
+        last_top_level_id = None
+
         for i, raw in enumerate(raw_comments):
             if not raw.get('text') and not raw.get('author'):
                 continue
 
             # Extract content ID from current URL
-            content_id = None
-            current_url = self.current_url
-            for pattern in ['/p/', '/reel/', '/tv/']:
-                if pattern in current_url:
-                    match = re.search(rf'{pattern}([^/]+)/', current_url)
-                    if match:
-                        content_id = match.group(1)
-                        break
+            content_id = self._extract_content_id_from_url()
+            comment_id = f"{content_id or 'unknown'}_{i}"
+            is_reply = raw.get('is_reply', False)
+
+            # Calculate depth level
+            depth = 1
+            if is_reply:
+                depth = 2
+                if raw.get('ul_depth', 0) > 2:
+                    depth = raw.get('ul_depth', 2)
 
             comment = {
-                'id': f"{content_id or 'unknown'}_{i}",
+                'id': comment_id,
                 'text': raw.get('text', ''),
                 'author': raw.get('author', ''),
+                'author_url': raw.get('author_url', ''),
                 'published_at': None,
                 'likes': raw.get('likes', 0),
-                'parent_id': None,
+                'parent_id': last_top_level_id if is_reply else None,
                 'replies_count': 0,
+                'is_reply': is_reply,
+                'depth': depth,
             }
 
-            # Parse datetime
+            if not is_reply:
+                last_top_level_id = comment_id
+
             if raw.get('datetime'):
                 try:
                     comment['published_at'] = datetime.fromisoformat(
@@ -274,8 +337,41 @@ class CommentsSection(BasePage):
 
             comments.append(comment)
 
-        logger.debug(f"COMMENTS EXTRACTED | count={len(comments)}")
+        # Count replies for each parent
+        reply_counts = {}
+        for comment in comments:
+            if comment.get('parent_id'):
+                reply_counts[comment['parent_id']] = reply_counts.get(comment['parent_id'], 0) + 1
+
+        for comment in comments:
+            if comment['id'] in reply_counts:
+                comment['replies_count'] = reply_counts[comment['id']]
+
         return comments
+
+    def _extract_content_id_from_url(self) -> Optional[str]:
+        """Extract the content ID from the current URL."""
+        current_url = self.current_url
+        for pattern in ['/p/', '/reel/', '/tv/']:
+            if pattern in current_url:
+                match = re.search(rf'{pattern}([^/]+)/', current_url)
+                if match:
+                    return match.group(1)
+        return None
+
+    def _log_extraction_stats(self, comments: List[Dict[str, Any]], raw_comments: List[Dict[str, Any]]) -> None:
+        """Log statistics about extracted comments."""
+        total_replies = sum(1 for c in comments if c.get('parent_id'))
+        top_level = len(comments) - total_replies
+
+        ul_depth_detected = sum(1 for r in raw_comments if r.get('ul_depth', 0) > 1)
+        legacy_class_detected = sum(1 for r in raw_comments if r.get('has_legacy_class', False))
+        mention_detected = sum(1 for r in raw_comments if r.get('starts_with_mention', False))
+
+        logger.debug(
+            f"COMMENTS EXTRACTED | total={len(comments)} | top_level={top_level} | replies={total_replies} | "
+            f"ul_depth_replies={ul_depth_detected} | legacy_class={legacy_class_detected} | mention_detected={mention_detected}"
+        )
 
     def scroll_comments_section(self, max_scrolls: int = 20) -> int:
         """
@@ -392,22 +488,10 @@ class CommentsSection(BasePage):
         for _ in range(max_clicks):
             clicked = self.evaluate('''
                 () => {
-                    // First look for specific "View replies" spans with _a9yi class (most reliable)
-                    const replySpans = document.querySelectorAll('span._a9yi');
-                    for (const span of replySpans) {
-                        const text = span.textContent?.toLowerCase() || '';
-                        if (text.includes('view') && text.includes('repl')) {
-                            const btn = span.closest('button');
-                            if (btn) {
-                                btn.click();
-                                return 'clicked_a9yi_button';
-                            }
-                            span.click();
-                            return 'clicked_a9yi_span';
-                        }
-                    }
+                    // Use class-agnostic approach to find "View replies" buttons
+                    // This is more robust than relying on obfuscated class names like _a9yi
 
-                    // Look for ANY span containing "View replies" text (class-agnostic)
+                    // Look for ANY span containing "View replies" text
                     const allSpans = document.querySelectorAll('span');
                     for (const span of allSpans) {
                         const text = span.textContent?.toLowerCase() || '';
@@ -508,16 +592,23 @@ class CommentsSection(BasePage):
         logger.info(f"EXTRACTING COMMENTS | post_id={post_id}")
 
         # Wait for page to fully load and React to hydrate
-        self.wait(3000)
+        self.wait(1500)  # Reduced from 3000ms
 
         # Try to wait for interactive elements that indicate React has loaded
+        # Use structural selectors instead of obfuscated class names
         try:
             self.page.wait_for_selector(
-                "article, button, ul[class*='_a9']",
+                "article, button, div[role='dialog'] ul",
                 timeout=5000
             )
         except Exception:
             logger.debug("COMMENTS | interactive elements not found, continuing anyway")
+            # Save HTML when interactive elements not found - indicates potential issue
+            self.save_on_timeout(
+                waiting_for="article, button, div[role='dialog'] ul",
+                timeout_ms=5000,
+                context=post_id
+            )
 
         # Debug: Initial page state
         initial_state = self.evaluate('''
@@ -535,12 +626,14 @@ class CommentsSection(BasePage):
                 };
 
                 // Find all ul elements that might be comment lists
+                // Use structural detection instead of relying on obfuscated class names
                 document.querySelectorAll('ul').forEach(ul => {
                     if (ul.className) {
                         results.allUlClasses.push(ul.className.substring(0, 30));
-                        if (ul.className.includes('_a9')) {
-                            results.commentListClasses.push(ul.className.substring(0, 50));
-                        }
+                    }
+                    // Check if ul contains time elements (comments have timestamps)
+                    if (ul.querySelector('time') && ul.querySelectorAll('li').length > 0) {
+                        results.commentListClasses.push(ul.className?.substring(0, 50) || 'no-class');
                     }
                 });
 
@@ -559,7 +652,7 @@ class CommentsSection(BasePage):
         self.click_view_all_comments()
 
         # Comments are at the top of the post page, no need to scroll down
-        self.wait(1000)
+        self.wait(500)  # Reduced from 1000ms
 
         # Load all comments by clicking "Load more" buttons
         load_clicks = self.load_all_comments(max_load_clicks)
@@ -570,7 +663,7 @@ class CommentsSection(BasePage):
         logger.info(f"SCROLL COMMENTS | scrolled {scroll_count} times")
 
         # Wait for any lazy-loaded content
-        self.wait(2000)
+        self.wait(1000)  # Reduced from 2000ms
 
         # Scroll through the comment list to trigger lazy loading of reply buttons
         # NOTE: We scroll within the comments container, not the main page
@@ -595,25 +688,40 @@ class CommentsSection(BasePage):
                 }
 
                 // Try multiple selectors for comment lists
-                const selectors = ['ul._a9ym', 'ul._a9z6', 'ul[class*="_a9"]', 'article ul'];
-
-                for (const sel of selectors) {
-                    const lists = document.querySelectorAll(sel);
-                    for (const list of lists) {
-                        const items = list.querySelectorAll('li');
-                        for (const item of items) {
-                            if (scrollContainer) {
-                                // Scroll within container instead of page
-                                const itemRect = item.getBoundingClientRect();
-                                const containerRect = scrollContainer.getBoundingClientRect();
-                                const scrollTop = item.offsetTop - scrollContainer.offsetTop - (containerRect.height / 2);
-                                scrollContainer.scrollTop = Math.max(0, scrollTop);
-                            }
-                            // Don't use scrollIntoView as it scrolls the page
-                            scrolledItems++;
+                // Use structural selectors that identify comment lists by their content
+                // Comment lists contain: li elements with time elements (timestamps) and anchor links (usernames)
+                const findCommentLists = () => {
+                    const candidates = [];
+                    document.querySelectorAll('ul').forEach(ul => {
+                        const hasTimestamps = ul.querySelector('time');
+                        const hasListItems = ul.querySelectorAll('li').length > 0;
+                        const hasUserLinks = ul.querySelector('a[href^="/"][href$="/"]');
+                        if (hasTimestamps && hasListItems && hasUserLinks) {
+                            candidates.push(ul);
                         }
+                    });
+                    // Fallback to article ul if no structural match
+                    if (candidates.length === 0) {
+                        const articleUl = document.querySelector('article ul');
+                        if (articleUl) candidates.push(articleUl);
                     }
-                    if (scrolledItems > 0) break;
+                    return candidates;
+                };
+                const commentLists = findCommentLists();
+
+                for (const list of commentLists) {
+                    const items = list.querySelectorAll('li');
+                    for (const item of items) {
+                        if (scrollContainer) {
+                            // Scroll within container instead of page
+                            const itemRect = item.getBoundingClientRect();
+                            const containerRect = scrollContainer.getBoundingClientRect();
+                            const scrollTop = item.offsetTop - scrollContainer.offsetTop - (containerRect.height / 2);
+                            scrollContainer.scrollTop = Math.max(0, scrollTop);
+                        }
+                        // Don't use scrollIntoView as it scrolls the page
+                        scrolledItems++;
+                    }
                 }
 
                 return { scrolledItems, hasContainer: !!scrollContainer };
@@ -636,12 +744,17 @@ class CommentsSection(BasePage):
                     total_spans: 0
                 };
 
-                // Check for _a9yi class spans (Instagram's reply button text)
-                const a9yiSpans = document.querySelectorAll('span._a9yi');
-                results.a9yi_spans = a9yiSpans.length;
-                a9yiSpans.forEach(s => {
-                    results.all_buttons_text.push('_a9yi: ' + s.textContent?.trim().substring(0, 30));
+                // Find spans that contain "View replies" text (class-agnostic approach)
+                // The old approach used 'span._a9yi' but these class names change frequently
+                let viewReplySpans = 0;
+                document.querySelectorAll('span').forEach(span => {
+                    const text = span.textContent?.toLowerCase() || '';
+                    if (text.match(/view.*\\d+.*repl/i) || text.match(/view repl/i)) {
+                        viewReplySpans++;
+                        results.all_buttons_text.push('reply_span: ' + span.textContent?.trim().substring(0, 30));
+                    }
                 });
+                results.a9yi_spans = viewReplySpans;
 
                 // Search ALL spans for "View replies" text (class-agnostic)
                 const allSpans = document.querySelectorAll('span');
@@ -665,15 +778,29 @@ class CommentsSection(BasePage):
                     }
                 });
 
-                // Check if ul._a9yo exists (reply container)
-                const replyContainers = document.querySelectorAll('ul._a9yo');
-                results.reply_containers = replyContainers.length;
+                // Check for nested ul elements (reply containers)
+                // Reply containers are ul elements inside li elements
+                let replyContainerCount = 0;
+                document.querySelectorAll('ul li ul').forEach(ul => {
+                    if (ul.querySelector('time')) {
+                        replyContainerCount++;
+                    }
+                });
+                results.reply_containers = replyContainerCount;
 
-                // Check for comment list with various selectors
-                const commentList = document.querySelector('ul._a9z6') ||
-                                   document.querySelector('ul._a9ym') ||
-                                   document.querySelector('article ul');
-                results.has_comment_list = !!commentList;
+                // Check for comment list using structural detection
+                // Comment lists have time elements and multiple li items
+                let hasCommentList = false;
+                document.querySelectorAll('ul').forEach(ul => {
+                    if (ul.querySelector('time') && ul.querySelectorAll('li').length > 0) {
+                        hasCommentList = true;
+                    }
+                });
+                // Fallback to article ul
+                if (!hasCommentList) {
+                    hasCommentList = !!document.querySelector('article ul');
+                }
+                results.has_comment_list = hasCommentList;
 
                 // Also check for clickable spans that might be reply buttons
                 const clickableSpans = document.querySelectorAll('span[role="button"], span[tabindex="0"]');
@@ -704,4 +831,18 @@ class CommentsSection(BasePage):
             comment['id'] = f"{post_id}_{i}"
 
         logger.info(f"COMMENTS EXTRACTED | post_id={post_id} | count={len(comments)}")
+
+        # Save HTML if no comments found - indicates potential scraping issue
+        if len(comments) == 0:
+            self.save_debug_html(
+                reason="No comments extracted - possible page structure change",
+                context=post_id,
+                additional_info={
+                    "load_clicks": load_clicks,
+                    "scroll_count": scroll_count,
+                    "expanded_replies": expanded,
+                    "initial_state": initial_state,
+                }
+            )
+
         return comments

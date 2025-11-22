@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ValidationResult:
     """Result of validation check."""
 
-    def __init__(self, is_valid: bool, errors: List[str], warnings: List[str]):
+    def __init__(self, is_valid: bool, errors: List[str], warnings: List[str]) -> None:
         self.is_valid = is_valid
         self.errors = errors
         self.warnings = warnings
@@ -25,7 +25,7 @@ class ValidationResult:
 class DataValidator:
     """Validates extraction data before persistence or export."""
 
-    def __init__(self, strict: bool = False):
+    def __init__(self, strict: bool = False) -> None:
         """
         Initialize validator.
 

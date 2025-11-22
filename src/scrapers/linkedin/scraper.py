@@ -1,26 +1,27 @@
 """LinkedIn Scraper using Page Object Model architecture."""
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Dict, Any
+from typing import Iterator, Optional, Dict, Any, Set
 
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
+from playwright.sync_api import Page
 
 from ...core.models import (
     Platform,
     Post,
     Profile,
-    Comment,
-    Author,
     ExtractionResult,
 )
 from ...core.exceptions import (
     AuthenticationError,
-    PrivateAccountError,
+    AccountNotFoundError,
     RateLimitError,
 )
 from ..base import BaseScraper
+from ..shared.browser_manager import BrowserManager, BrowserConfig
+from ..shared.rate_limiting import LinkedInRateLimitDetector
 from ..shared.constants import TIMEOUTS
 from .pages import LoginPage, ProfilePage, PostPage, CommentsSection
 from .selectors import Selectors
@@ -57,10 +58,8 @@ class LinkedInScraper(BaseScraper):
         self._headless = browser_config.get("headless", config.get("headless", False))
         self._browser_profile = browser_config.get("profile_dir") or config.get("browser_profile")
 
-        # Session
-        self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
+        # Browser manager (handles lifecycle)
+        self._browser_manager: Optional[BrowserManager] = None
         self._page: Optional[Page] = None
 
         # Page objects (initialized after browser)
@@ -69,46 +68,32 @@ class LinkedInScraper(BaseScraper):
         self._post_page: Optional[PostPage] = None
         self._comments_section: Optional[CommentsSection] = None
 
+        # Rate limit detector
+        self._rate_limit_detector = LinkedInRateLimitDetector()
+
         # Initialize browser
         self._init_browser()
 
-    def _init_browser(self):
-        """Initialize Playwright browser and page objects."""
-        logger.info("BROWSER INIT | platform=linkedin | headless=%s", self._headless)
+    def _init_browser(self) -> None:
+        """Initialize browser using BrowserManager."""
+        # Get session file path for storage state
+        session_file = self.config.get("session_file")
+        storage_state = None
+        if session_file:
+            session_path = Path(session_file)
+            playwright_session = session_path.with_suffix('.playwright.json')
+            if playwright_session.exists():
+                storage_state = str(playwright_session)
 
-        self._playwright = sync_playwright().start()
+        browser_config = BrowserConfig(
+            headless=self._headless,
+            profile_dir=self._browser_profile,
+            storage_state=storage_state,
+            proxy=self._current_proxy,
+        )
 
-        # Check for persistent browser profile
-        if self._browser_profile and Path(self._browser_profile).exists():
-            # Use persistent context with existing browser profile
-            logger.info(f"BROWSER INIT | using persistent context from {self._browser_profile}")
-            self._context = self._playwright.chromium.launch_persistent_context(
-                self._browser_profile,
-                headless=self._headless,
-                viewport={"width": 1280, "height": 800},
-                user_agent=self._current_user_agent,
-            )
-            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-        else:
-            # Create new browser profile directory if specified
-            if self._browser_profile:
-                Path(self._browser_profile).mkdir(parents=True, exist_ok=True)
-                logger.info(f"BROWSER INIT | creating new persistent context at {self._browser_profile}")
-                self._context = self._playwright.chromium.launch_persistent_context(
-                    self._browser_profile,
-                    headless=self._headless,
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=self._current_user_agent,
-                )
-                self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-            else:
-                # Non-persistent browser
-                self._browser = self._playwright.chromium.launch(headless=self._headless)
-                self._context = self._browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                    user_agent=self._current_user_agent,
-                )
-                self._page = self._context.new_page()
+        self._browser_manager = BrowserManager(browser_config, "linkedin")
+        self._page = self._browser_manager.page
 
         # Initialize page objects
         self._login_page = LoginPage(self._page)
@@ -116,17 +101,42 @@ class LinkedInScraper(BaseScraper):
         self._post_page = PostPage(self._page)
         self._comments_section = CommentsSection(self._page)
 
-        logger.info("PAGE OBJECTS | initialized login, profile, post, comments")
-
-    def close(self):
+    def close(self) -> None:
         """Clean up browser resources."""
-        logger.info("BROWSER CLEANUP | platform=linkedin")
-        if self._context:
-            self._context.close()
-        if self._browser:
-            self._browser.close()
-        if self._playwright:
-            self._playwright.stop()
+        if self._browser_manager:
+            self._browser_manager.close()
+            self._browser_manager = None
+        super().close()
+
+    def _check_rate_limit(self) -> bool:
+        """
+        Check if LinkedIn is rate limiting us.
+
+        Returns:
+            True if rate limited, False otherwise
+        """
+        return self._rate_limit_detector.is_rate_limited(self._page)
+
+    def _navigate_to_url(self, url: str, max_retries: int = 3) -> bool:
+        """
+        Navigate to URL with retry and rate limit detection.
+
+        Uses the base class _navigate_with_retry method with LinkedIn-specific selectors.
+
+        Args:
+            url: URL to navigate to
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            True if navigation succeeded, False otherwise
+        """
+        return super()._navigate_with_retry(
+            page=self._page,
+            url=url,
+            content_selectors=["div.feed-shared-update-v2", "article", "main"],
+            rate_limit_detector=self._rate_limit_detector,
+            max_retries=max_retries
+        )
 
     def _ensure_logged_in(self) -> None:
         """Ensure we are logged in to LinkedIn."""
@@ -151,9 +161,37 @@ class LinkedInScraper(BaseScraper):
                     platform=self.platform.value
                 )
 
+            # Save session to Playwright format
+            session_file = self.config.get("session_file")
+            if session_file:
+                session_path = Path(session_file)
+                playwright_session = session_path.with_suffix('.playwright.json')
+                self._browser_manager.save_storage_state(str(playwright_session))
+                logger.info(f"SESSION | saved Playwright session to {playwright_session}")
+
             logger.info("LOGIN SUCCESS | user=%s", self._email)
         else:
             logger.info("LOGIN | already logged in (session restored)")
+
+    def _handle_session_expiry(self, account_id: str) -> None:
+        """Handle session expiry by re-logging in."""
+        logger.info("SESSION | forcing re-login")
+        if self._email and self._password:
+            self._login_page.login(self._email, self._password)
+            # Save new session
+            session_file = self.config.get("session_file")
+            if session_file:
+                session_path = Path(session_file)
+                playwright_session = session_path.with_suffix('.playwright.json')
+                self._browser_manager.save_storage_state(str(playwright_session))
+                logger.info(f"SESSION | saved new Playwright session to {playwright_session}")
+            # Navigate back to posts
+            self._profile_page.navigate_to_posts(account_id)
+        else:
+            raise AuthenticationError(
+                "Session expired and no credentials available for re-login",
+                platform=self.platform.value
+            )
 
     def _scrape_profile(self, account_id: str) -> Profile:
         """
@@ -165,37 +203,36 @@ class LinkedInScraper(BaseScraper):
         Returns:
             Profile model with account information
         """
+        self._ensure_logged_in()
         self._profile_page.navigate(account_id)
 
         if not self._profile_page.is_profile_available():
-            logger.warning(f"Profile not available: {account_id}")
-            # Return minimal profile
-            return Profile(
-                platform=Platform.LINKEDIN,
-                username=account_id,
-                display_name=account_id,
-                followers=0,
-                following=0,
+            raise AccountNotFoundError(
+                f"LinkedIn profile not found: {account_id}",
+                platform=self.platform.value,
+                account_id=account_id
             )
 
         # LinkedIn uses connections instead of following
         connections = self._profile_page.get_connections_count()
 
         return Profile(
-            platform=Platform.LINKEDIN,
+            platform=self.platform,
+            platform_id=account_id,
             username=account_id,
             display_name=self._profile_page.get_display_name() or account_id,
-            bio=self._profile_page.get_headline(),
-            followers=self._profile_page.get_followers_count(),
-            following=connections,  # Use connections as following
+            followers_count=self._profile_page.get_followers_count(),
+            following_count=connections,  # Use connections as following
             is_verified=self._profile_page.is_verified(),
+            raw_data={"headline": self._profile_page.get_headline()},
         )
 
     def _scrape_posts(
         self,
         account_id: str,
         since_date: Optional[datetime],
-        max_posts: int
+        max_posts: int,
+        known_post_ids: Optional[Set[str]] = None
     ) -> Iterator[ExtractionResult]:
         """
         Scrape posts and their comments.
@@ -204,6 +241,7 @@ class LinkedInScraper(BaseScraper):
             account_id: LinkedIn username or profile URL
             since_date: Only get posts after this date (optional)
             max_posts: Maximum number of posts to scrape
+            known_post_ids: Set of post IDs to skip (already extracted)
 
         Yields:
             ExtractionResult with post and comments
@@ -217,23 +255,73 @@ class LinkedInScraper(BaseScraper):
         self._profile_page.navigate_to_posts(account_id)
 
         if not self._profile_page.is_profile_available():
-            logger.warning(f"Profile not available: {account_id}")
-            return
+            raise AccountNotFoundError(
+                f"LinkedIn profile not found: {account_id}",
+                platform=self.platform.value,
+                account_id=account_id
+            )
+
+        # Load checkpoint if resuming
+        checkpoint_ids = self._load_checkpoint(account_id)
+
+        # Combine known_post_ids with checkpoint
+        all_known_ids = (known_post_ids or set()) | checkpoint_ids
 
         # Get post links
-        post_links = self._post_page.get_post_links(account_id, max_posts)
-        logger.info(f"Found {len(post_links)} posts to process")
+        scroll_all = max_posts > 50
+        post_links = self._post_page.get_post_links(
+            account_id,
+            max_posts,
+            scroll_all=scroll_all,
+            known_post_ids=all_known_ids
+        )
 
-        for idx, post_url in enumerate(post_links, 1):
+        if not post_links:
+            logger.warning("No posts found on profile")
+            return
+
+        logger.info(f"PHASE 1 COMPLETE | Collected {len(post_links)} post links")
+
+        # Track progress
+        posts_scraped = 0
+        posts_skipped = 0
+        consecutive_failures = 0
+        max_failures = 5
+        processed_this_session: Set[str] = set()
+
+        for post_url in post_links:
+            if posts_scraped >= max_posts:
+                break
+
+            # Navigate with retry logic
+            nav_success = self._navigate_to_url(post_url)
+
+            if not nav_success:
+                logger.warning(f"Failed to navigate to post after retries: {post_url[:60]}...")
+                consecutive_failures += 1
+                if consecutive_failures >= max_failures:
+                    logger.warning("Too many navigation failures, stopping")
+                    break
+                continue
+
+            # Check for rate limiting after navigation
+            if self._check_rate_limit():
+                logger.warning("Rate limit detected, waiting before retry...")
+                self._page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
+                if self._check_rate_limit():
+                    logger.error("Still rate limited after waiting, stopping extraction")
+                    break
+
             try:
-                logger.info(f"PROCESSING POST {idx}/{len(post_links)} | url={post_url}")
-
-                # Navigate to post
-                self._page.goto(post_url, wait_until="domcontentloaded")
-                self._page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
-
                 # Extract post data
                 post_data = self._post_page.extract_post_data(account_id)
+                post_id = post_data.get("id", f"post_{posts_scraped}")
+
+                # Skip if post already exists
+                if post_id in all_known_ids:
+                    posts_skipped += 1
+                    logger.debug(f"Skipping existing post: {post_id}")
+                    continue
 
                 # Check date filter
                 post_date = post_data.get("timestamp")
@@ -244,55 +332,67 @@ class LinkedInScraper(BaseScraper):
                         else:
                             post_datetime = post_date
                         if post_datetime.replace(tzinfo=None) < since_date:
-                            logger.debug(f"Skipping post {post_data.get('id')} - before since_date")
-                            continue
+                            logger.info(f"Post {post_id} before since_date, stopping")
+                            break
                     except (ValueError, TypeError):
                         pass  # If we can't parse date, include the post
 
                 # Create Post model
                 post = Post(
-                    platform=Platform.LINKEDIN,
-                    platform_id=post_data.get("id", f"post_{idx}"),
+                    platform=self.platform,
+                    platform_id=post_id,
+                    account_id=account_id,
                     url=post_url,
                     text=post_data.get("text", ""),
-                    likes=post_data.get("likes", 0),
-                    comments_count=post_data.get("comments_count", 0),
-                    shares=post_data.get("shares", 0),
                     published_at=post_date if isinstance(post_date, datetime) else None,
-                    author=Author(
-                        username=account_id,
-                        display_name=post_data.get("author_name", account_id),
-                    ),
+                    likes=post_data.get("likes", 0),
+                    comments_count=post_data.get("comments", 0),
+                    shares=post_data.get("reposts", 0),
+                    media_type=post_data.get("media_type", "text"),
+                    media_urls=[],
+                    raw_data={},
                 )
 
                 # Extract comments
-                comments_data = self._comments_section.extract_comments_for_post(post_data.get("id", ""))
-
-                comments = []
-                for comment_item in comments_data:
-                    comment = Comment(
-                        platform=Platform.LINKEDIN,
-                        platform_id=comment_item.get("id", f"comment_{len(comments)}"),
-                        post_id=post.platform_id,
-                        text=comment_item.get("text", ""),
-                        likes=comment_item.get("likes", 0),
-                        published_at=comment_item.get("timestamp") if isinstance(comment_item.get("timestamp"), datetime) else None,
-                        author=Author(
-                            username=comment_item.get("author", "unknown"),
-                            display_name=comment_item.get("author_name", comment_item.get("author", "unknown")),
-                        ),
-                    )
-                    comments.append(comment)
-
-                logger.info(f"Post {idx} extracted | comments={len(comments)}")
+                raw_comments = self._comments_section.extract_comments_for_post(post_id)
+                comments = self._create_comment_objects(raw_comments, post_id)
+                post.comments_count = len(comments)
 
                 yield ExtractionResult(post=post, comments=comments)
 
-                # Human-like delay
-                self._page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
+                posts_scraped += 1
+                consecutive_failures = 0
+                processed_this_session.add(post_id)
+
+                logger.info(
+                    f"SCRAPED | {posts_scraped}/{max_posts} | "
+                    f"post_id={post_id} | comments={len(comments)}"
+                )
+
+                # Save checkpoint periodically (every 5 posts)
+                if posts_scraped % 5 == 0:
+                    self._save_checkpoint(account_id, checkpoint_ids | processed_this_session)
+
+                # Extended break check
+                if self.should_take_extended_break():
+                    self.take_extended_break()
 
             except Exception as e:
-                logger.error(f"Error processing post {post_url}: {e}")
-                continue
+                logger.warning(f"Error extracting post from {post_url}: {e}")
+                consecutive_failures += 1
 
-        logger.info(f"COMPLETED | total_posts={len(post_links)}")
+            if consecutive_failures >= max_failures:
+                logger.warning("Too many failures, stopping")
+                break
+
+            # Human-like delay
+            self._post_page.human_delay(1000, 2000)
+
+        # Clear checkpoint on successful completion
+        if consecutive_failures < max_failures:
+            self._clear_checkpoint(account_id)
+
+        logger.info(
+            f"EXTRACTION COMPLETE | account={account_id} | "
+            f"posts={posts_scraped} | skipped={posts_skipped}"
+        )

@@ -133,11 +133,18 @@ dmypy.json
 Thumbs.db
 
 # Project specific
-data/
 logs/
 *.db
 *.sqlite
 *.sqlite3
+
+# Data folder - cache and large files excluded, structure kept
+data/.cache/
+data/extractor.db
+data/accounts/**/posts/*.json
+data/accounts/**/comments/*.json
+!data/accounts/**/posts/progress.json
+!data/accounts/**/comments/progress.json
 
 # Browser profiles (contain session data)
 browser_profiles/

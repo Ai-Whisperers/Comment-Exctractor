@@ -3,7 +3,7 @@
 import logging
 import re
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 from playwright.sync_api import Page
 from .base_page import BasePage
 from ..selectors import Selectors
@@ -17,17 +17,38 @@ class TweetPage(BasePage):
     def __init__(self, page: Page):
         super().__init__(page)
 
-    def get_tweet_links(self, username: str, max_tweets: int = 10) -> List[str]:
-        logger.info(f"COLLECTING TWEET LINKS | max={max_tweets}")
+    def get_tweet_links(
+        self,
+        username: str,
+        max_tweets: int = 10,
+        scroll_all: bool = False,
+        known_post_ids: Optional[Set[str]] = None
+    ) -> List[str]:
+        """
+        Collect tweet links from profile page.
+
+        Args:
+            username: Twitter username
+            max_tweets: Maximum number of tweets to collect
+            scroll_all: If True, scroll more aggressively for larger extractions
+            known_post_ids: Set of tweet IDs to skip (already extracted)
+
+        Returns:
+            List of tweet URLs
+        """
+        logger.info(f"COLLECTING TWEET LINKS | max={max_tweets} | scroll_all={scroll_all}")
 
         tweet_links = []
         seen_urls = set()
+        known_post_ids = known_post_ids or set()
         scroll_attempts = 0
-        max_scroll = 10
+        max_scroll = 20 if scroll_all else 10
+        no_new_tweets_count = 0
 
         while len(tweet_links) < max_tweets and scroll_attempts < max_scroll:
             articles = self.get_elements(Selectors.Tweet.TWEET_ARTICLE)
 
+            new_tweets_this_scroll = 0
             for article in articles:
                 if len(tweet_links) >= max_tweets:
                     break
@@ -35,22 +56,49 @@ class TweetPage(BasePage):
                     link = article.locator(Selectors.Tweet.TWEET_LINK).first
                     href = link.get_attribute("href")
                     if href and "/status/" in href and href not in seen_urls:
+                        seen_urls.add(href)
+
                         if not href.startswith("http"):
                             href = f"https://x.com{href}"
+
+                        # Extract tweet ID to check against known_post_ids
+                        tweet_id = self._extract_tweet_id_from_url(href)
+                        if tweet_id and tweet_id in known_post_ids:
+                            logger.debug(f"Skipping known tweet: {tweet_id}")
+                            continue
+
                         tweet_links.append(href)
-                        seen_urls.add(href)
+                        new_tweets_this_scroll += 1
                 except Exception:
                     continue
 
             if len(tweet_links) >= max_tweets:
                 break
 
+            # Check if we're getting new tweets
+            if new_tweets_this_scroll == 0:
+                no_new_tweets_count += 1
+                if no_new_tweets_count >= 3:
+                    logger.info("No new tweets found after 3 scrolls, stopping")
+                    break
+            else:
+                no_new_tweets_count = 0
+
             self.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             self.wait(2000)
             scroll_attempts += 1
 
+            # Log progress
+            if scroll_attempts % 5 == 0:
+                logger.debug(f"Scroll {scroll_attempts}/{max_scroll} | tweets={len(tweet_links)}")
+
         logger.info(f"COLLECTED {len(tweet_links)} TWEET LINKS")
         return tweet_links
+
+    def _extract_tweet_id_from_url(self, url: str) -> Optional[str]:
+        """Extract tweet ID from Twitter URL."""
+        match = re.search(r"/status/(\d+)", url)
+        return match.group(1) if match else None
 
     def extract_tweet_data(self, username: str) -> Dict[str, Any]:
         tweet_id = self._get_tweet_id()
