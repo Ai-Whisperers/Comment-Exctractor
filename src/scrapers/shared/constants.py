@@ -40,6 +40,13 @@ class TIMEOUTS:
     DYNAMIC_CONTENT = 3000
 
 
+class RETRY_CONFIG:
+    """Retry and failure tracking configuration."""
+    NAV_RETRIES = 3
+    MAX_CONSECUTIVE_FAILURES = 5
+    CHECKPOINT_INTERVAL = 5
+
+
 class VIEWPORTS:
     """Standard viewport configurations."""
     DEFAULT: Dict[str, int] = {"width": 1280, "height": 800}

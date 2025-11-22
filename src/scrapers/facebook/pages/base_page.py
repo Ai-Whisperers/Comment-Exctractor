@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from ...shared.base_page import BasePage as SharedBasePage
 from ..selectors import Selectors
@@ -42,7 +42,7 @@ class BasePage(SharedBasePage):
                 close_button.click()
                 self.wait(500)
                 logger.debug("POPUP DISMISSED | close button")
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             pass
 
         # Try Escape key
@@ -52,7 +52,7 @@ class BasePage(SharedBasePage):
                 self.page.keyboard.press("Escape")
                 self.wait(300)
                 logger.debug("POPUP DISMISSED | escape key")
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             pass
 
         # Try common dismiss buttons
@@ -71,32 +71,9 @@ class BasePage(SharedBasePage):
                     self.wait(500)
                     logger.debug(f"POPUP DISMISSED | selector={selector}")
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 continue
 
         return self
 
-    # =========================================================================
-    # URL / PAGE STATE
-    # =========================================================================
-
-    def url_contains(self, pattern: str) -> bool:
-        """Check if current URL contains pattern."""
-        return pattern in self.page.url
-
-    # =========================================================================
-    # KEYBOARD
-    # =========================================================================
-
-    def press_key(self, key: str) -> "BasePage":
-        """
-        Press a keyboard key.
-
-        Args:
-            key: Key to press (e.g., "ArrowRight", "Escape")
-
-        Returns:
-            Self for chaining
-        """
-        self.page.keyboard.press(key)
-        return self
+    # url_contains(), press_key(), and query_selector() are inherited from SharedBasePage

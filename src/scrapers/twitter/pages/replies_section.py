@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 from .base_page import BasePage
 from ..selectors import Selectors
 
@@ -26,7 +26,7 @@ class RepliesSection(BasePage):
         logger.info(f"EXTRACTED {len(replies)} REPLIES | tweet_id={tweet_id}")
         return replies
 
-    def _load_more_replies(self, max_loads: int = 10) -> None:
+    def _load_more_replies(self, max_loads: int = 100) -> None:
         """Load more replies by clicking show more buttons."""
         for i in range(max_loads):
             try:
@@ -40,7 +40,7 @@ class RepliesSection(BasePage):
                     self.wait(1500)
                 else:
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 break
 
     def _extract_replies_js(self, tweet_id: str) -> List[Dict[str, Any]]:
@@ -124,7 +124,7 @@ class RepliesSection(BasePage):
                 if reply.get('timestamp'):
                     try:
                         timestamp = datetime.fromisoformat(reply['timestamp'].replace("Z", "+00:00"))
-                    except Exception:
+                    except ValueError:
                         pass
 
                 processed.append({

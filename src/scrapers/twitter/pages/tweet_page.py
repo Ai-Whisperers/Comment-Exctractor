@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Set
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 from .base_page import BasePage
 from ..selectors import Selectors
 
@@ -69,7 +69,7 @@ class TweetPage(BasePage):
 
                         tweet_links.append(href)
                         new_tweets_this_scroll += 1
-                except Exception:
+                except (PlaywrightTimeout, TimeoutError, AttributeError):
                     continue
 
             if len(tweet_links) >= max_tweets:
@@ -139,7 +139,7 @@ class TweetPage(BasePage):
                 datetime_str = time_elem.get_attribute("datetime")
                 if datetime_str:
                     return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError, ValueError):
             pass
         return None
 

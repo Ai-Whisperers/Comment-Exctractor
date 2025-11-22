@@ -74,7 +74,7 @@ class BasePage:
         try:
             self.page.wait_for_selector(selector, timeout=timeout)
             return True
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             return False
 
     def click(self, selector: str, timeout: int = None, force: bool = False) -> bool:
@@ -233,6 +233,43 @@ class BasePage:
         """Get the current page URL."""
         return self.page.url
 
+    def url_contains(self, pattern: str) -> bool:
+        """
+        Check if current URL contains pattern.
+
+        Args:
+            pattern: String pattern to search for
+
+        Returns:
+            True if pattern found in URL
+        """
+        return pattern in self.page.url
+
+    def press_key(self, key: str) -> "BasePage":
+        """
+        Press a keyboard key.
+
+        Args:
+            key: Key to press (e.g., "ArrowRight", "Escape", "Enter")
+
+        Returns:
+            Self for chaining
+        """
+        self.page.keyboard.press(key)
+        return self
+
+    def query_selector(self, selector: str):
+        """
+        Query selector using page.query_selector.
+
+        Args:
+            selector: CSS selector
+
+        Returns:
+            Element handle or None
+        """
+        return self.page.query_selector(selector)
+
     def dismiss_popups(self, selectors: List[str]) -> "BasePage":
         """
         Attempt to dismiss popups using provided selectors.
@@ -249,7 +286,7 @@ class BasePage:
                     self.click(selector)
                     self.wait(500)
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 continue
         return self
 

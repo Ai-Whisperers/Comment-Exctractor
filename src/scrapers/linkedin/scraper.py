@@ -282,117 +282,65 @@ class LinkedInScraper(BaseScraper):
 
         logger.info(f"PHASE 1 COMPLETE | Collected {len(post_links)} post links")
 
-        # Track progress
-        posts_scraped = 0
-        posts_skipped = 0
-        consecutive_failures = 0
-        max_failures = 5
-        processed_this_session: Set[str] = set()
+        # Define extraction function for each post
+        def extract_post(post_url: str):
+            # Extract post data
+            post_data = self._post_page.extract_post_data(account_id)
+            post_id = post_data.get("id", "")
 
-        for post_url in post_links:
-            if posts_scraped >= max_posts:
-                break
+            if not post_id:
+                return None
 
-            # Navigate with retry logic
-            nav_success = self._navigate_to_url(post_url)
+            # Check date filter
+            post_date = post_data.get("timestamp")
+            if since_date and post_date:
+                try:
+                    if isinstance(post_date, str):
+                        post_datetime = datetime.fromisoformat(post_date.replace('Z', '+00:00'))
+                    else:
+                        post_datetime = post_date
+                    if post_datetime.replace(tzinfo=None) < since_date:
+                        logger.info(f"Post {post_id} before since_date, stopping")
+                        return None
+                except (ValueError, TypeError):
+                    pass  # If we can't parse date, include the post
 
-            if not nav_success:
-                logger.warning(f"Failed to navigate to post after retries: {post_url[:60]}...")
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    logger.warning("Too many navigation failures, stopping")
-                    break
-                continue
+            # Create Post model
+            post = Post(
+                platform=self.platform,
+                platform_id=post_id,
+                account_id=account_id,
+                url=post_url,
+                text=post_data.get("text", ""),
+                published_at=post_date if isinstance(post_date, datetime) else None,
+                likes=post_data.get("likes", 0),
+                comments_count=post_data.get("comments", 0),
+                shares=post_data.get("reposts", 0),
+                media_type=post_data.get("media_type", "text"),
+                media_urls=[],
+                raw_data={},
+            )
 
-            # Check for rate limiting after navigation
-            if self._check_rate_limit():
-                logger.warning("Rate limit detected, waiting before retry...")
-                self._page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
-                if self._check_rate_limit():
-                    logger.error("Still rate limited after waiting, stopping extraction")
-                    break
+            # Extract comments
+            raw_comments = self._comments_section.extract_comments_for_post(post_id)
+            comments = self._create_comment_objects(raw_comments, post_id)
+            post.comments_count = len(comments)
 
-            try:
-                # Extract post data
-                post_data = self._post_page.extract_post_data(account_id)
-                post_id = post_data.get("id", f"post_{posts_scraped}")
+            return ExtractionResult(post=post, comments=comments)
 
-                # Skip if post already exists
-                if post_id in all_known_ids:
-                    posts_skipped += 1
-                    logger.debug(f"Skipping existing post: {post_id}")
-                    continue
-
-                # Check date filter
-                post_date = post_data.get("timestamp")
-                if since_date and post_date:
-                    try:
-                        if isinstance(post_date, str):
-                            post_datetime = datetime.fromisoformat(post_date.replace('Z', '+00:00'))
-                        else:
-                            post_datetime = post_date
-                        if post_datetime.replace(tzinfo=None) < since_date:
-                            logger.info(f"Post {post_id} before since_date, stopping")
-                            break
-                    except (ValueError, TypeError):
-                        pass  # If we can't parse date, include the post
-
-                # Create Post model
-                post = Post(
-                    platform=self.platform,
-                    platform_id=post_id,
-                    account_id=account_id,
-                    url=post_url,
-                    text=post_data.get("text", ""),
-                    published_at=post_date if isinstance(post_date, datetime) else None,
-                    likes=post_data.get("likes", 0),
-                    comments_count=post_data.get("comments", 0),
-                    shares=post_data.get("reposts", 0),
-                    media_type=post_data.get("media_type", "text"),
-                    media_urls=[],
-                    raw_data={},
-                )
-
-                # Extract comments
-                raw_comments = self._comments_section.extract_comments_for_post(post_id)
-                comments = self._create_comment_objects(raw_comments, post_id)
-                post.comments_count = len(comments)
-
-                yield ExtractionResult(post=post, comments=comments)
-
-                posts_scraped += 1
-                consecutive_failures = 0
-                processed_this_session.add(post_id)
-
-                logger.info(
-                    f"SCRAPED | {posts_scraped}/{max_posts} | "
-                    f"post_id={post_id} | comments={len(comments)}"
-                )
-
-                # Save checkpoint periodically (every 5 posts)
-                if posts_scraped % 5 == 0:
-                    self._save_checkpoint(account_id, checkpoint_ids | processed_this_session)
-
-                # Extended break check
-                if self.should_take_extended_break():
-                    self.take_extended_break()
-
-            except Exception as e:
-                logger.warning(f"Error extracting post from {post_url}: {e}")
-                consecutive_failures += 1
-
-            if consecutive_failures >= max_failures:
-                logger.warning("Too many failures, stopping")
-                break
-
-            # Human-like delay
-            self._post_page.human_delay(1000, 2000)
-
-        # Clear checkpoint on successful completion
-        if consecutive_failures < max_failures:
-            self._clear_checkpoint(account_id)
-
-        logger.info(
-            f"EXTRACTION COMPLETE | account={account_id} | "
-            f"posts={posts_scraped} | skipped={posts_skipped}"
+        # Use unified post iteration from base class
+        yield from self._iterate_posts(
+            post_links=post_links,
+            max_posts=max_posts,
+            known_post_ids=all_known_ids,
+            extract_fn=extract_post,
+            page=self._page,
+            check_rate_limit_fn=self._check_rate_limit,
+            human_delay_fn=self._post_page.human_delay,
+            account_id=account_id,
+            checkpoint_ids=checkpoint_ids,
+            use_navigate_method=True,
+            navigate_fn=self._navigate_to_url
         )
+
+        logger.info(f"EXTRACTION COMPLETE | account={account_id}")

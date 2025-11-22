@@ -46,12 +46,15 @@ class FacebookScraper(BaseScraper):
         """
         super().__init__(config)
 
-        # Credentials
-        self._email = config.get("email")
-        self._password = config.get("password")
+        # Credentials (support both flat and nested config)
+        credentials = config.get("credentials", {})
+        self._email = credentials.get("email") or config.get("email")
+        self._password = credentials.get("password") or config.get("password")
 
-        # Browser settings
-        self._headless = config.get("headless", False)
+        # Browser settings (support both flat and nested config)
+        browser_config = config.get("browser", {})
+        self._headless = browser_config.get("headless", config.get("headless", False))
+        self._browser_profile = browser_config.get("profile_dir") or config.get("browser_profile")
 
         # Browser manager (handles lifecycle)
         self._browser_manager: Optional[BrowserManager] = None
@@ -73,7 +76,7 @@ class FacebookScraper(BaseScraper):
         """Initialize browser using BrowserManager."""
         browser_config = BrowserConfig(
             headless=self._headless,
-            profile_dir=self.config.get("browser_profile"),
+            profile_dir=self._browser_profile,
             proxy=self._current_proxy,
         )
 
@@ -99,7 +102,7 @@ class FacebookScraper(BaseScraper):
         """Ensure user is logged in, performing login if necessary."""
         # Check if already logged in
         self._page.goto(Selectors.URLs.HOME, wait_until="domcontentloaded")
-        self._page.wait_for_timeout(2000)
+        self._page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
 
         if self._login_page.is_logged_in():
             logger.info("SESSION | already logged in")
@@ -202,109 +205,51 @@ class FacebookScraper(BaseScraper):
 
         logger.info(f"COLLECTED {len(post_links)} POST LINKS")
 
-        # Scrape each post
-        posts_scraped = 0
-        posts_skipped = 0
-        consecutive_failures = 0
-        max_failures = 5
-        known_post_ids = known_post_ids or set()
+        # Define extraction function for each post
+        def extract_post(post_url: str):
+            # Extract post data
+            post_data = self._post_page.extract_post_data(account_id)
 
-        for post_url in post_links:
-            if posts_scraped >= max_posts:
-                break
+            # Create Post object
+            post = Post(
+                platform=self.platform,
+                platform_id=post_data["id"],
+                account_id=account_id,
+                url=post_data["url"],
+                text=post_data["text"],
+                published_at=post_data["timestamp"],
+                likes=post_data["likes"],
+                comments_count=post_data["comments_count"],
+                shares=post_data["shares"],
+                media_type=post_data["media_type"],
+                media_urls=[],
+                raw_data={},
+            )
 
-            # Navigate with retry logic
-            nav_success = False
-            for attempt in range(3):
-                try:
-                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-                    self._page.wait_for_timeout(1500)
-                    nav_success = True
-                    break
-                except Exception as nav_error:
-                    logger.warning(f"Navigation attempt {attempt + 1}/3 failed for {post_url[:60]}...: {nav_error}")
-                    if attempt < 2:
-                        self._page.wait_for_timeout(2000)  # Wait before retry
+            # Check date filter
+            if since_date and post.published_at and post.published_at < since_date:
+                logger.info(f"Post {post.platform_id} before since_date, stopping")
+                return None  # Signal to stop iteration
 
-            if not nav_success:
-                logger.warning(f"Failed to navigate to post after 3 attempts: {post_url[:60]}...")
-                consecutive_failures += 1
-                continue
+            # Extract comments
+            raw_comments = self._comments_section.extract_comments_for_post(post.platform_id)
+            comments = self._create_comment_objects(raw_comments, post.platform_id)
+            post.comments_count = len(comments)
 
-            # Check for rate limiting after navigation
-            if self._check_rate_limit():
-                logger.warning("Rate limit detected, waiting 60 seconds before retry...")
-                self._page.wait_for_timeout(60000)
-                # Try once more after waiting
-                if self._check_rate_limit():
-                    logger.error("Still rate limited after waiting, stopping extraction")
-                    break
+            return ExtractionResult(post=post, comments=comments)
 
-            try:
-
-                # Extract post data
-                post_data = self._post_page.extract_post_data(account_id)
-
-                # Skip if post already exists in database
-                if post_data["id"] in known_post_ids:
-                    posts_skipped += 1
-                    logger.debug(f"Skipping existing post: {post_data['id']}")
-                    continue
-
-                # Create Post object
-                post = Post(
-                    platform=self.platform,
-                    platform_id=post_data["id"],
-                    account_id=account_id,
-                    url=post_data["url"],
-                    text=post_data["text"],
-                    published_at=post_data["timestamp"],
-                    likes=post_data["likes"],
-                    comments_count=post_data["comments_count"],
-                    shares=post_data["shares"],
-                    media_type=post_data["media_type"],
-                    media_urls=[],
-                    raw_data={},
-                )
-
-                # Check date filter
-                if since_date and post.published_at and post.published_at < since_date:
-                    logger.info(f"Post {post.platform_id} before since_date, stopping")
-                    break
-
-                # Extract comments
-                raw_comments = self._comments_section.extract_comments_for_post(post.platform_id)
-                comments = self._create_comment_objects(raw_comments, post.platform_id)
-                post.comments_count = len(comments)
-
-                yield ExtractionResult(post=post, comments=comments)
-                posts_scraped += 1
-                consecutive_failures = 0
-
-                logger.info(
-                    f"SCRAPED | {posts_scraped}/{max_posts} | "
-                    f"post_id={post.platform_id} | comments={len(comments)}"
-                )
-
-                # Extended break check
-                if self.should_take_extended_break():
-                    self.take_extended_break()
-
-            except Exception as e:
-                logger.warning(f"Error extracting post from {post_url}: {e}")
-                consecutive_failures += 1
-
-            if consecutive_failures >= max_failures:
-                logger.warning("Too many failures, stopping")
-                break
-
-            # Human-like delay
-            self._post_page.human_delay(1000, 2000)
-
-        logger.info(
-            f"EXTRACTION COMPLETE | account={account_id} | "
-            f"posts={posts_scraped} | skipped={posts_skipped}"
+        # Use unified post iteration from base class
+        yield from self._iterate_posts(
+            post_links=post_links,
+            max_posts=max_posts,
+            known_post_ids=known_post_ids or set(),
+            extract_fn=extract_post,
+            page=self._page,
+            check_rate_limit_fn=self._check_rate_limit,
+            human_delay_fn=self._post_page.human_delay
         )
+
+        logger.info(f"EXTRACTION COMPLETE | account={account_id}")
 
     def close(self) -> None:
         """Clean up browser resources."""

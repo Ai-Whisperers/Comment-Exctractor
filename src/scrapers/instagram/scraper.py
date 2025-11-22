@@ -48,12 +48,15 @@ class InstagramScraper(BaseScraper):
         """
         super().__init__(config)
 
-        # Credentials
-        self._username = config.get("username")
-        self._password = config.get("password")
+        # Credentials (support both flat and nested config)
+        credentials = config.get("credentials", {})
+        self._username = credentials.get("username") or config.get("username")
+        self._password = credentials.get("password") or config.get("password")
 
-        # Browser settings
-        self._headless = config.get("headless", False)
+        # Browser settings (support both flat and nested config)
+        browser_config = config.get("browser", {})
+        self._headless = browser_config.get("headless", config.get("headless", False))
+        self._browser_profile = browser_config.get("profile_dir") or config.get("browser_profile")
 
         # Browser manager (handles lifecycle)
         self._browser_manager: Optional[BrowserManager] = None
@@ -84,7 +87,7 @@ class InstagramScraper(BaseScraper):
 
         browser_config = BrowserConfig(
             headless=self._headless,
-            profile_dir=self.config.get("browser_profile"),
+            profile_dir=self._browser_profile,
             storage_state=storage_state,
             proxy=self._current_proxy,
         )
@@ -133,11 +136,11 @@ class InstagramScraper(BaseScraper):
         # Navigate to Instagram home to check login state
         # Use domcontentloaded instead of networkidle to avoid timeout issues
         self._page.goto(Selectors.URLs.HOME, wait_until="domcontentloaded")
-        self._page.wait_for_timeout(3000)  # Wait for dynamic content to load
+        self._page.wait_for_timeout(TIMEOUTS.LONG_WAIT)  # Wait for dynamic content to load
 
         # Dismiss any popups that might be blocking
         self._profile_page.dismiss_popups()
-        self._page.wait_for_timeout(1000)
+        self._page.wait_for_timeout(TIMEOUTS.SHORT_WAIT)
 
         # Check if we were redirected to login page
         current_url = self._page.url
@@ -287,115 +290,57 @@ class InstagramScraper(BaseScraper):
         # ============================================================
         # PHASE 2: Extract data from each post
         # ============================================================
-        posts_scraped = 0
-        posts_skipped = 0
-        consecutive_failures = 0
-        max_failures = 5
-        known_post_ids = known_post_ids or set()
 
-        for post_url in post_links:
-            if posts_scraped >= max_posts:
-                break
+        # Define extraction function for each post
+        def extract_post(post_url: str):
+            # Extract post data
+            post_data = self._post_modal.extract_post_data(account_id)
+            post_id = post_data.get("id") or self._post_modal.get_post_id()
 
-            # Navigate with retry logic
-            nav_success = False
-            for attempt in range(3):
-                try:
-                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-                    self._page.wait_for_timeout(TIMEOUTS.CONTENT_LOAD)
-                    nav_success = True
-                    break
-                except Exception as nav_error:
-                    logger.warning(f"Navigation attempt {attempt + 1}/3 failed for {post_url[:60]}...: {nav_error}")
-                    if attempt < 2:
-                        self._page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
+            if not post_id:
+                logger.warning(f"Could not get post ID from {post_url}")
+                return None
 
-            if not nav_success:
-                logger.warning(f"Failed to navigate to post after 3 attempts: {post_url[:60]}...")
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    logger.warning("Too many navigation failures, stopping")
-                    break
-                continue
+            # Create Post object
+            post = Post(
+                platform=self.platform,
+                platform_id=post_id,
+                account_id=account_id,
+                url=post_data["url"],
+                text=post_data["caption"],
+                published_at=post_data["timestamp"],
+                likes=post_data["likes"],
+                comments_count=0,
+                shares=0,
+                media_type=post_data["media_type"],
+                media_urls=[],
+                raw_data={},
+            )
 
-            # Check for rate limiting after navigation
-            if self._check_rate_limit():
-                logger.warning("Rate limit detected, waiting before retry...")
-                self._page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
-                if self._check_rate_limit():
-                    logger.error("Still rate limited after waiting, stopping extraction")
-                    break
+            # Check date filter
+            if since_date and post.published_at and post.published_at < since_date:
+                logger.info(f"Post {post.platform_id} before since_date, stopping")
+                return None
 
-            try:
-                # Extract post data
-                post_data = self._post_modal.extract_post_data(account_id)
-                post_id = post_data.get("id") or self._post_modal.get_post_id()
+            # Extract comments
+            raw_comments = self._comments_section.extract_comments_for_post(post.platform_id)
+            comments = self._create_comment_objects(raw_comments, post.platform_id)
+            post.comments_count = len(comments)
 
-                if not post_id:
-                    logger.warning(f"Could not get post ID from {post_url}")
-                    consecutive_failures += 1
-                    continue
+            return ExtractionResult(post=post, comments=comments)
 
-                # Skip if post already exists in database
-                if post_id in known_post_ids:
-                    posts_skipped += 1
-                    logger.debug(f"Skipping existing post: {post_id}")
-                    continue
-
-                # Create Post object
-                post = Post(
-                    platform=self.platform,
-                    platform_id=post_id,
-                    account_id=account_id,
-                    url=post_data["url"],
-                    text=post_data["caption"],
-                    published_at=post_data["timestamp"],
-                    likes=post_data["likes"],
-                    comments_count=0,
-                    shares=0,
-                    media_type=post_data["media_type"],
-                    media_urls=[],
-                    raw_data={},
-                )
-
-                # Check date filter
-                if since_date and post.published_at and post.published_at < since_date:
-                    logger.info(f"Post {post.platform_id} before since_date, stopping")
-                    break
-
-                # Extract comments
-                raw_comments = self._comments_section.extract_comments_for_post(post.platform_id)
-                comments = self._create_comment_objects(raw_comments, post.platform_id)
-                post.comments_count = len(comments)
-
-                yield ExtractionResult(post=post, comments=comments)
-                posts_scraped += 1
-                consecutive_failures = 0
-
-                logger.info(
-                    f"SCRAPED | {posts_scraped}/{max_posts} | "
-                    f"post_id={post.platform_id} | comments={len(comments)}"
-                )
-
-                # Extended break check
-                if self.should_take_extended_break():
-                    self.take_extended_break()
-
-            except Exception as e:
-                logger.warning(f"Error extracting post from {post_url}: {e}")
-                consecutive_failures += 1
-
-            if consecutive_failures >= max_failures:
-                logger.warning("Too many failures, stopping")
-                break
-
-            # Human-like delay
-            self._post_modal.human_delay(1000, 2000)
-
-        logger.info(
-            f"PHASE 2 COMPLETE | account={account_id} | "
-            f"posts={posts_scraped} | skipped={posts_skipped}"
+        # Use unified post iteration from base class
+        yield from self._iterate_posts(
+            post_links=post_links,
+            max_posts=max_posts,
+            known_post_ids=known_post_ids or set(),
+            extract_fn=extract_post,
+            page=self._page,
+            check_rate_limit_fn=self._check_rate_limit,
+            human_delay_fn=self._post_modal.human_delay
         )
+
+        logger.info(f"PHASE 2 COMPLETE | account={account_id}")
 
     def _handle_session_expiry(self, account_id: str) -> None:
         """Handle session expiry by re-logging in."""

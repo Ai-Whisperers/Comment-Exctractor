@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CommentsSection(BasePage):
     """Page Object for Instagram comments section."""
 
-    def load_all_comments(self, max_clicks: int = 10) -> int:
+    def load_all_comments(self, max_clicks: int = 100) -> int:
         """
         Load all comments by clicking 'Load more' repeatedly.
 
@@ -473,7 +473,7 @@ class CommentsSection(BasePage):
         logger.debug(f"COMMENTS | scrolled {scrolls} times")
         return scrolls
 
-    def expand_all_replies(self, max_clicks: int = 50) -> int:
+    def expand_all_replies(self, max_clicks: int = 100) -> int:
         """
         Click all "View replies" buttons to expand hidden replies.
 
@@ -817,7 +817,7 @@ class CommentsSection(BasePage):
         logger.info(f"REPLY BUTTONS DEBUG | {reply_debug}")
 
         # Expand all reply threads
-        expanded = self.expand_all_replies(max_clicks=30)
+        expanded = self.expand_all_replies(max_clicks=100)
         logger.info(f"EXPANDED REPLIES | {expanded} threads")
 
         # Give it a moment to render

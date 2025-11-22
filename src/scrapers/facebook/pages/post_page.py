@@ -5,7 +5,7 @@ import re
 import time
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from .base_page import BasePage
 from ..selectors import Selectors
@@ -141,7 +141,7 @@ class PostPage(BasePage):
                         post_links.append(href)
                         seen_post_ids.add(dedup_key)
                         logger.debug(f"Found post link: {href[:80]}...")
-                    except Exception:
+                    except (PlaywrightTimeout, TimeoutError, AttributeError):
                         continue
 
             # Check if we found new posts
@@ -499,7 +499,7 @@ class PostPage(BasePage):
                     return now - timedelta(days=days)
             elif "yesterday" in time_text:
                 return now - timedelta(days=1)
-        except Exception:
+        except (ValueError, AttributeError):
             pass
 
         return None

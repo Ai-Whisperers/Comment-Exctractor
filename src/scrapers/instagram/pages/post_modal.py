@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional, Dict, Any
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from .base_page import BasePage
 from ..selectors import Selectors
@@ -167,7 +167,7 @@ class PostModal(BasePage):
                 }
             ''')
             return caption or ""
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError, ValueError):
             return ""
 
     def get_likes(self) -> int:
@@ -204,7 +204,7 @@ class PostModal(BasePage):
             datetime_str = self.get_attribute(Selectors.PostModal.TIME_ELEMENT, "datetime")
             if datetime_str:
                 return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError, ValueError):
             pass
         return None
 
@@ -220,7 +220,7 @@ class PostModal(BasePage):
                 return "video"
             if self.is_visible(Selectors.PostModal.CAROUSEL_NEXT, timeout=1000):
                 return "carousel"
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             pass
         return "image"
 

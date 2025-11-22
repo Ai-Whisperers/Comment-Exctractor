@@ -7,7 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Dict, Any, List, Set, Callable, TYPE_CHECKING
+from types import TracebackType
+from typing import Iterator, Optional, Dict, Any, List, Set, Callable, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -25,7 +26,7 @@ from ..core.exceptions import (
     RateLimitError,
 )
 from ..utils.parsing import parse_datetime_flexible
-from .shared.constants import USER_AGENTS, ACCEPT_LANGUAGES, TIMEOUTS
+from .shared.constants import USER_AGENTS, ACCEPT_LANGUAGES, TIMEOUTS, RETRY_CONFIG
 from .shared.rate_limiting import RateLimitHandler, RateLimitDetector
 
 logger = logging.getLogger(__name__)
@@ -118,7 +119,12 @@ class BaseScraper(ABC):
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType]
+    ) -> bool:
         """Context manager exit with cleanup."""
         self.close()
         return False
@@ -175,7 +181,7 @@ class BaseScraper(ABC):
         """Get current proxy URL."""
         return self._current_proxy
 
-    def rotate_proxy(self):
+    def rotate_proxy(self) -> None:
         """Rotate to a different proxy."""
         if len(self._proxies) > 1:
             available = [p for p in self._proxies if p != self._current_proxy]
@@ -185,14 +191,26 @@ class BaseScraper(ABC):
             logger.warning("Only one proxy available, cannot rotate")
 
     @abstractmethod
-    def _scrape_posts(self, account_id: str, since_date: Optional[datetime], max_posts: int, known_post_ids: set = None) -> Iterator[ExtractionResult]:
+    def _scrape_posts(
+        self,
+        account_id: str,
+        since_date: Optional[datetime],
+        max_posts: int,
+        known_post_ids: Optional[Set[str]] = None
+    ) -> Iterator[ExtractionResult]:
         pass
 
     @abstractmethod
     def _scrape_profile(self, account_id: str) -> Profile:
         pass
 
-    def get_posts_with_comments(self, account_id: str, since_date: Optional[datetime] = None, max_posts: int = 100, known_post_ids: set = None) -> Iterator[ExtractionResult]:
+    def get_posts_with_comments(
+        self,
+        account_id: str,
+        since_date: Optional[datetime] = None,
+        max_posts: int = 100,
+        known_post_ids: Optional[Set[str]] = None
+    ) -> Iterator[ExtractionResult]:
         logger.info(
             f"EXTRACTION START | account={account_id} | "
             f"platform={self.platform.value} | "
@@ -251,7 +269,7 @@ class BaseScraper(ABC):
 
             raise ScraperError(f"Failed to scrape {account_id}", platform=self.platform.value, account_id=account_id, original_error=e)
 
-    def _handle_rate_limit(self):
+    def _handle_rate_limit(self) -> None:
         """Handle rate limit with exponential backoff and proxy rotation."""
         self._consecutive_errors += 1
 
@@ -343,8 +361,9 @@ class BaseScraper(ABC):
                 # Wait for content to load
                 try:
                     page.wait_for_selector(selector_string, timeout=10000)
-                except Exception:
-                    pass  # Continue even if selector not found
+                except (TimeoutError, Exception) as e:
+                    # Continue even if selector not found - may be TimeoutError or other Playwright exceptions
+                    logger.debug(f"Selector wait timed out or failed: {type(e).__name__}")
 
                 page.wait_for_timeout(wait_after_load)
 
@@ -446,6 +465,145 @@ class BaseScraper(ABC):
             except Exception as e:
                 logger.warning(f"Failed to clear checkpoint: {e}")
 
+    def _iterate_posts(
+        self,
+        post_links: List[str],
+        max_posts: int,
+        known_post_ids: Set[str],
+        extract_fn: Callable[[str], Optional[ExtractionResult]],
+        page: Any,
+        check_rate_limit_fn: Callable[[], bool],
+        human_delay_fn: Optional[Callable[[int, int], None]] = None,
+        max_failures: int = RETRY_CONFIG.MAX_CONSECUTIVE_FAILURES,
+        account_id: Optional[str] = None,
+        checkpoint_ids: Optional[Set[str]] = None,
+        use_navigate_method: bool = False,
+        navigate_fn: Optional[Callable[[str], bool]] = None
+    ) -> Iterator[ExtractionResult]:
+        """
+        Unified post iteration with navigation retry and failure tracking.
+
+        This consolidates the common post iteration pattern found across all scrapers.
+
+        Args:
+            post_links: List of post URLs to iterate over
+            max_posts: Maximum number of posts to scrape
+            known_post_ids: Set of post IDs to skip (already extracted)
+            extract_fn: Function that extracts post data, returns ExtractionResult or None
+            page: Playwright page object for navigation
+            check_rate_limit_fn: Function to check if rate limited
+            human_delay_fn: Optional function for human-like delays between posts
+            max_failures: Maximum consecutive failures before stopping
+            account_id: Optional account ID for checkpoint saving
+            checkpoint_ids: Optional existing checkpoint IDs to merge with
+            use_navigate_method: Use navigate_fn instead of direct page.goto
+            navigate_fn: Custom navigation function that returns bool
+
+        Yields:
+            ExtractionResult objects with post and comments
+        """
+        posts_scraped = 0
+        posts_skipped = 0
+        consecutive_failures = 0
+        known_ids = known_post_ids or set()
+        processed_this_session: Set[str] = set()
+        checkpoint_base = checkpoint_ids or set()
+
+        for post_url in post_links:
+            if posts_scraped >= max_posts:
+                break
+
+            # Navigation with retry logic
+            if use_navigate_method and navigate_fn:
+                # Use custom navigation function
+                nav_success = navigate_fn(post_url)
+            else:
+                # Default navigation with retry
+                nav_success = False
+                for attempt in range(RETRY_CONFIG.NAV_RETRIES):
+                    try:
+                        page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+                        page.wait_for_timeout(TIMEOUTS.CONTENT_LOAD)
+                        nav_success = True
+                        break
+                    except Exception as nav_error:
+                        logger.warning(
+                            f"Navigation attempt {attempt + 1}/{RETRY_CONFIG.NAV_RETRIES} "
+                            f"failed for {post_url[:60]}...: {nav_error}"
+                        )
+                        if attempt < RETRY_CONFIG.NAV_RETRIES - 1:
+                            page.wait_for_timeout(TIMEOUTS.MEDIUM_WAIT)
+
+            if not nav_success:
+                logger.warning(f"Failed to navigate to post after retries: {post_url[:60]}...")
+                consecutive_failures += 1
+                if consecutive_failures >= max_failures:
+                    logger.warning("Too many navigation failures, stopping")
+                    break
+                continue
+
+            # Check for rate limiting after navigation
+            if check_rate_limit_fn():
+                logger.warning("Rate limit detected, waiting before retry...")
+                page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
+                if check_rate_limit_fn():
+                    logger.error("Still rate limited after waiting, stopping extraction")
+                    break
+
+            try:
+                # Call the extraction function
+                result = extract_fn(post_url)
+
+                if result is None:
+                    # Extraction returned None (e.g., post in known_ids)
+                    posts_skipped += 1
+                    continue
+
+                # Check if post should be skipped
+                if result.post.platform_id in known_ids:
+                    posts_skipped += 1
+                    logger.debug(f"Skipping existing post: {result.post.platform_id}")
+                    continue
+
+                yield result
+                posts_scraped += 1
+                consecutive_failures = 0
+                processed_this_session.add(result.post.platform_id)
+
+                logger.info(
+                    f"SCRAPED | {posts_scraped}/{max_posts} | "
+                    f"post_id={result.post.platform_id} | "
+                    f"comments={len(result.comments) if result.comments else 0}"
+                )
+
+                # Save checkpoint periodically
+                if account_id and posts_scraped % RETRY_CONFIG.CHECKPOINT_INTERVAL == 0:
+                    self._save_checkpoint(account_id, checkpoint_base | processed_this_session)
+
+                # Extended break check
+                if self.should_take_extended_break():
+                    self.take_extended_break()
+
+            except Exception as e:
+                logger.warning(f"Error extracting post from {post_url}: {e}")
+                consecutive_failures += 1
+
+            if consecutive_failures >= max_failures:
+                logger.warning("Too many failures, stopping")
+                break
+
+            # Human-like delay between posts
+            if human_delay_fn:
+                human_delay_fn(TIMEOUTS.HUMAN_MIN * 2, TIMEOUTS.HUMAN_MAX * 2)
+
+        # Clear checkpoint on successful completion
+        if account_id and consecutive_failures < max_failures:
+            self._clear_checkpoint(account_id)
+
+        logger.info(
+            f"ITERATION COMPLETE | posts={posts_scraped} | skipped={posts_skipped}"
+        )
+
     def get_profile(self, account_id: str) -> Profile:
         logger.info(f"PROFILE FETCH START | account={account_id} | platform={self.platform.value}")
         self._human_delay()
@@ -466,7 +624,7 @@ class BaseScraper(ABC):
     def get_comments(self, post_id: str, max_comments: int = 1000) -> Iterator[Comment]:
         raise NotImplementedError(f"{self.__class__.__name__} does not support get_comments directly")
 
-    def _human_delay(self):
+    def _human_delay(self) -> None:
         """
         Apply human-like random delays between requests.
 
@@ -513,7 +671,7 @@ class BaseScraper(ABC):
 
         self._last_request_time = time.time()
 
-    def _rate_limit(self):
+    def _rate_limit(self) -> None:
         """Legacy rate limiting method."""
         min_interval = 60.0 / self.requests_per_minute
         elapsed = time.time() - self._last_request_time
@@ -564,7 +722,7 @@ class BaseScraper(ABC):
 
         return False
 
-    def take_extended_break(self):
+    def take_extended_break(self) -> None:
         """Take an extended break to simulate real human behavior."""
         break_time = random.uniform(5 * 60, 15 * 60)  # 5-15 minutes
         logger.info(
@@ -594,7 +752,7 @@ class BaseScraper(ABC):
 
         return True
 
-    def wait_for_good_time(self):
+    def wait_for_good_time(self) -> None:
         """Wait until a reasonable time to resume scraping."""
         while not self.is_good_time_to_scrape():
             # Calculate time until 6 AM

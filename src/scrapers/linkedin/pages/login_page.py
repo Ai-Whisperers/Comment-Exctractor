@@ -1,7 +1,7 @@
 """LinkedIn Login Page Object."""
 
 import logging
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 from .base_page import BasePage
 from ..selectors import Selectors
 
@@ -95,7 +95,7 @@ class LoginPage(BasePage):
                     element.click()
                     self.wait(2000)
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 continue
 
         # Check if we're on a password-only prompt (after clicking saved account)

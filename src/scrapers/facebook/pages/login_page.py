@@ -1,7 +1,7 @@
 """Facebook Login Page Object."""
 
 import logging
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from .base_page import BasePage
 from ..selectors import Selectors
@@ -63,7 +63,7 @@ class LoginPage(BasePage):
         # Wait for navigation with extended timeout for 2FA/verification
         try:
             self.wait_for_load(timeout=30000)
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             logger.debug("LOGIN | load timeout, continuing...")
 
         # Wait longer for manual verification if needed
@@ -141,7 +141,7 @@ class LoginPage(BasePage):
             try:
                 if self.is_visible(selector, timeout=1000):
                     return True
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 continue
 
         # Check for news feed
@@ -157,5 +157,5 @@ class LoginPage(BasePage):
                 logger.debug("POPUP | handling cookie consent")
                 self.click(Selectors.Login.COOKIE_ACCEPT)
                 self.human_delay(500, 1000)
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             pass

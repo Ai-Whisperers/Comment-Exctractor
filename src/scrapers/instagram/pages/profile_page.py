@@ -3,7 +3,7 @@
 import logging
 import re
 from typing import List, Optional, Dict, Any, Union
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 
 from .base_page import BasePage
 from ..selectors import Selectors
@@ -152,7 +152,7 @@ class ProfilePage(BasePage):
         # Wait for any content grid
         try:
             self.wait_for_selector(Selectors.Profile.POST_GRID, timeout=10000)
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             # Try alternative - just wait for main content area
             self.wait(2000)
 
@@ -324,7 +324,7 @@ class ProfilePage(BasePage):
         # Wait for any content grid
         try:
             self.wait_for_selector(Selectors.Profile.POST_GRID, timeout=10000)
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError):
             self.wait(2000)
 
         def collect_posts_with_data():
@@ -666,7 +666,7 @@ class ProfilePage(BasePage):
                 )
                 logger.info("CONTENT MODAL OPENED")
                 return True
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 # Try alternative detection - modal dialog
                 if self.wait_for_selector(Selectors.PostModal.ARTICLE, timeout=5000):
                     return True

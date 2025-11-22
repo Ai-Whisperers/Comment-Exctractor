@@ -304,117 +304,65 @@ class TwitterScraper(BaseScraper):
 
         logger.info(f"PHASE 1 COMPLETE | Collected {len(tweet_links)} tweet links")
 
-        # Track progress
-        posts_scraped = 0
-        posts_skipped = 0
-        consecutive_failures = 0
-        max_failures = 5
-        processed_this_session: Set[str] = set()
+        # Define extraction function for each tweet
+        def extract_tweet(tweet_url: str):
+            # Extract tweet data
+            tweet_data = self._tweet_page.extract_tweet_data(account_id)
+            tweet_id = tweet_data.get("id", "")
 
-        for tweet_url in tweet_links:
-            if posts_scraped >= max_posts:
-                break
+            if not tweet_id:
+                return None
 
-            # Navigate with retry logic
-            nav_success = self._navigate_to_url(tweet_url)
+            # Check date filter
+            tweet_date = tweet_data.get("timestamp")
+            if since_date and tweet_date:
+                try:
+                    if isinstance(tweet_date, str):
+                        tweet_datetime = datetime.fromisoformat(tweet_date.replace('Z', '+00:00'))
+                    else:
+                        tweet_datetime = tweet_date
+                    if tweet_datetime.replace(tzinfo=None) < since_date:
+                        logger.info(f"Tweet {tweet_id} before since_date, stopping")
+                        return None
+                except (ValueError, TypeError):
+                    pass  # If we can't parse date, include the tweet
 
-            if not nav_success:
-                logger.warning(f"Failed to navigate to tweet after retries: {tweet_url[:60]}...")
-                consecutive_failures += 1
-                if consecutive_failures >= max_failures:
-                    logger.warning("Too many navigation failures, stopping")
-                    break
-                continue
+            # Create Post model
+            post = Post(
+                platform=self.platform,
+                platform_id=tweet_id,
+                account_id=account_id,
+                url=tweet_url,
+                text=tweet_data.get("text", ""),
+                published_at=tweet_date if isinstance(tweet_date, datetime) else None,
+                likes=tweet_data.get("likes", 0),
+                comments_count=tweet_data.get("replies", 0),
+                shares=tweet_data.get("retweets", 0),
+                media_type=tweet_data.get("media_type", "text"),
+                media_urls=[],
+                raw_data={},
+            )
 
-            # Check for rate limiting after navigation
-            if self._check_rate_limit():
-                logger.warning("Rate limit detected, waiting before retry...")
-                self._page.wait_for_timeout(TIMEOUTS.RATE_LIMIT_WAIT)
-                if self._check_rate_limit():
-                    logger.error("Still rate limited after waiting, stopping extraction")
-                    break
+            # Extract replies
+            raw_replies = self._replies_section.extract_replies_for_tweet(tweet_id)
+            comments = self._create_comment_objects(raw_replies, tweet_id)
+            post.comments_count = len(comments)
 
-            try:
-                # Extract tweet data
-                tweet_data = self._tweet_page.extract_tweet_data(account_id)
-                tweet_id = tweet_data.get("id", f"tweet_{posts_scraped}")
+            return ExtractionResult(post=post, comments=comments)
 
-                # Skip if tweet already exists
-                if tweet_id in all_known_ids:
-                    posts_skipped += 1
-                    logger.debug(f"Skipping existing tweet: {tweet_id}")
-                    continue
-
-                # Check date filter
-                tweet_date = tweet_data.get("timestamp")
-                if since_date and tweet_date:
-                    try:
-                        if isinstance(tweet_date, str):
-                            tweet_datetime = datetime.fromisoformat(tweet_date.replace('Z', '+00:00'))
-                        else:
-                            tweet_datetime = tweet_date
-                        if tweet_datetime.replace(tzinfo=None) < since_date:
-                            logger.info(f"Tweet {tweet_id} before since_date, stopping")
-                            break
-                    except (ValueError, TypeError):
-                        pass  # If we can't parse date, include the tweet
-
-                # Create Post model
-                post = Post(
-                    platform=self.platform,
-                    platform_id=tweet_id,
-                    account_id=account_id,
-                    url=tweet_url,
-                    text=tweet_data.get("text", ""),
-                    published_at=tweet_date if isinstance(tweet_date, datetime) else None,
-                    likes=tweet_data.get("likes", 0),
-                    comments_count=tweet_data.get("replies", 0),
-                    shares=tweet_data.get("retweets", 0),
-                    media_type=tweet_data.get("media_type", "text"),
-                    media_urls=[],
-                    raw_data={},
-                )
-
-                # Extract replies
-                raw_replies = self._replies_section.extract_replies_for_tweet(tweet_id)
-                comments = self._create_comment_objects(raw_replies, tweet_id)
-                post.comments_count = len(comments)
-
-                yield ExtractionResult(post=post, comments=comments)
-
-                posts_scraped += 1
-                consecutive_failures = 0
-                processed_this_session.add(tweet_id)
-
-                logger.info(
-                    f"SCRAPED | {posts_scraped}/{max_posts} | "
-                    f"tweet_id={tweet_id} | replies={len(comments)}"
-                )
-
-                # Save checkpoint periodically (every 5 posts)
-                if posts_scraped % 5 == 0:
-                    self._save_checkpoint(account_id, checkpoint_ids | processed_this_session)
-
-                # Extended break check
-                if self.should_take_extended_break():
-                    self.take_extended_break()
-
-            except Exception as e:
-                logger.warning(f"Error extracting tweet from {tweet_url}: {e}")
-                consecutive_failures += 1
-
-            if consecutive_failures >= max_failures:
-                logger.warning("Too many failures, stopping")
-                break
-
-            # Human-like delay
-            self._tweet_page.human_delay(1000, 2000)
-
-        # Clear checkpoint on successful completion
-        if consecutive_failures < max_failures:
-            self._clear_checkpoint(account_id)
-
-        logger.info(
-            f"EXTRACTION COMPLETE | account={account_id} | "
-            f"tweets={posts_scraped} | skipped={posts_skipped}"
+        # Use unified post iteration from base class
+        yield from self._iterate_posts(
+            post_links=tweet_links,
+            max_posts=max_posts,
+            known_post_ids=all_known_ids,
+            extract_fn=extract_tweet,
+            page=self._page,
+            check_rate_limit_fn=self._check_rate_limit,
+            human_delay_fn=self._tweet_page.human_delay,
+            account_id=account_id,
+            checkpoint_ids=checkpoint_ids,
+            use_navigate_method=True,
+            navigate_fn=self._navigate_to_url
         )
+
+        logger.info(f"EXTRACTION COMPLETE | account={account_id}")

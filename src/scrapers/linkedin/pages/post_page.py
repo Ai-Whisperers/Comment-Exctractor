@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Set
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 from .base_page import BasePage
 from ..selectors import Selectors
 
@@ -55,51 +55,58 @@ class PostPage(BasePage):
         while len(post_links) < max_posts and scroll_attempts < max_scroll:
             # Extract post URLs from feed using JS
             # Try multiple selectors for different LinkedIn page layouts
-            urls = self.evaluate('''
+            urls = self.evaluate(r'''
                 () => {
                     const links = [];
-                    const seenUrls = new Set();
+                    const seenIds = new Set();
 
-                    // Selectors for different LinkedIn post containers
-                    const postSelectors = [
-                        'div.feed-shared-update-v2',                    // Standard feed post
-                        'div.org-grid-container__grid-item',             // Company page grid item
-                        'article.org-update-item',                       // Company update item
-                        'div.feed-shared-actor',                         // Feed shared actor
-                        'li.occludable-update',                          // Occludable update item
-                        'div[data-urn*="activity"]',                     // Any element with activity URN
-                    ];
+                    // Method 1: Find links with /feed/update/ URLs
+                    const feedUpdateLinks = document.querySelectorAll('a[href*="/feed/update/"]');
+                    feedUpdateLinks.forEach(link => {
+                        const match = link.href.match(/activity:(\d+)/);
+                        if (match && !seenIds.has(match[1])) {
+                            seenIds.add(match[1]);
+                            links.push(link.href);
+                        }
+                    });
 
-                    // Link selectors for finding post URLs
-                    const linkSelectors = [
-                        'a[href*="/feed/update/"]',                      // Standard activity link
-                        'a[data-control-name="update_topbar_overflow_accessory"]',  // Topbar link
-                        'a[href*="urn:li:activity:"]',                   // URN-based link
-                    ];
-
-                    // Try each post container selector
-                    for (const postSelector of postSelectors) {
-                        const posts = document.querySelectorAll(postSelector);
-                        posts.forEach(post => {
-                            // Try each link selector
-                            for (const linkSelector of linkSelectors) {
-                                const activityLink = post.querySelector(linkSelector);
-                                if (activityLink && !seenUrls.has(activityLink.href)) {
-                                    links.push(activityLink.href);
-                                    seenUrls.add(activityLink.href);
-                                    break;  // Found link for this post
-                                }
+                    // Method 2: Find occludable-update elements with data-urn
+                    const occludableUpdates = document.querySelectorAll('li.occludable-update, div[data-id*="urn:li:activity"]');
+                    occludableUpdates.forEach(element => {
+                        const dataUrn = element.getAttribute('data-id') || element.getAttribute('data-urn');
+                        if (dataUrn) {
+                            const match = dataUrn.match(/activity:(\d+)/);
+                            if (match && !seenIds.has(match[1])) {
+                                seenIds.add(match[1]);
+                                // Construct feed update URL from URN
+                                links.push(`https://www.linkedin.com/feed/update/urn:li:activity:${match[1]}/`);
                             }
-                        });
-                    }
+                        }
+                    });
 
-                    // Also try to find any links with /feed/update/ directly
+                    // Method 3: Extract activity IDs from any element with data attributes containing activity URNs
+                    const elementsWithUrns = document.querySelectorAll('[data-urn*="activity:"], [data-id*="activity:"]');
+                    elementsWithUrns.forEach(element => {
+                        const urn = element.getAttribute('data-urn') || element.getAttribute('data-id');
+                        if (urn) {
+                            const match = urn.match(/activity:(\d+)/);
+                            if (match && !seenIds.has(match[1])) {
+                                seenIds.add(match[1]);
+                                links.push(`https://www.linkedin.com/feed/update/urn:li:activity:${match[1]}/`);
+                            }
+                        }
+                    });
+
+                    // Method 4: Search for activity URNs in the page content (last resort)
                     if (links.length === 0) {
-                        const allActivityLinks = document.querySelectorAll('a[href*="/feed/update/"]');
-                        allActivityLinks.forEach(link => {
-                            if (!seenUrls.has(link.href)) {
-                                links.push(link.href);
-                                seenUrls.add(link.href);
+                        const pageContent = document.body.innerHTML;
+                        const urnMatches = pageContent.match(/urn:li:activity:(\d+)/g) || [];
+                        const uniqueUrns = [...new Set(urnMatches)];
+                        uniqueUrns.forEach(urn => {
+                            const match = urn.match(/activity:(\d+)/);
+                            if (match && !seenIds.has(match[1])) {
+                                seenIds.add(match[1]);
+                                links.push(`https://www.linkedin.com/feed/update/${urn}/`);
                             }
                         });
                     }
@@ -209,7 +216,7 @@ class PostPage(BasePage):
                 datetime_str = time_elem.get_attribute("datetime")
                 if datetime_str:
                     return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
-        except Exception:
+        except (PlaywrightTimeout, TimeoutError, ValueError):
             pass
         return None
 

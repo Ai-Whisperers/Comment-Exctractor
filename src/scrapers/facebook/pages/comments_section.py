@@ -97,7 +97,7 @@ class CommentsSection(BasePage):
         except Exception as e:
             logger.debug(f"Could not get initial state: {e}")
 
-    def _load_all_comments(self, max_loads: int = 10) -> int:
+    def _load_all_comments(self, max_loads: int = 100) -> int:
         """
         Load all comments by clicking 'View more comments'.
 
@@ -335,7 +335,7 @@ class CommentsSection(BasePage):
         logger.info(f"COMMENTS | expanded {expanded} truncated texts")
         return expanded
 
-    def _expand_all_replies(self, max_expansions: int = 20) -> int:
+    def _expand_all_replies(self, max_expansions: int = 100) -> int:
         """
         Expand all reply threads by clicking 'View X replies' buttons.
 

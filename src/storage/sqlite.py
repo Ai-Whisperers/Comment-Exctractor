@@ -17,6 +17,7 @@ from ..core.models import (
 )
 from ..core.exceptions import StorageError, ValidationError
 from ..config.paths import get_paths
+from .base import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +25,29 @@ logger = logging.getLogger(__name__)
 __all__ = ["SQLiteStorage"]
 
 
-class SQLiteStorage:
+class SQLiteStorage(StorageBackend):
     """SQLite storage backend for comments, posts, and profiles."""
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, output_dir: str = None):
         """
         Initialize SQLite storage.
 
         Args:
             db_path: Path to SQLite database file (uses centralized config if None)
+            output_dir: Alternative way to specify location - db file created inside
 
         Raises:
             ValidationError: If db_path contains path traversal attempts
         """
-        if db_path is None:
+        # Handle output_dir for StorageBackend compatibility
+        if output_dir is not None and db_path is None:
+            # Call parent init for output_dir validation
+            super().__init__(output_dir)
+            self.db_path = self.output_dir / "storage.db"
+        elif db_path is None:
+            # Use default path - skip parent init since we're using db_path directly
             self.db_path = get_paths().database_path
+            self.output_dir = self.db_path.parent
         else:
             # Check for path traversal
             if '..' in str(db_path):
@@ -47,6 +56,7 @@ class SQLiteStorage:
                     field="db_path"
                 )
             self.db_path = Path(db_path)
+            self.output_dir = self.db_path.parent
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
@@ -279,9 +289,9 @@ class SQLiteStorage:
                 original_error=e
             )
 
-    def save_profile(self, client: str, profile: Profile) -> bool:
+    def _save_profile_internal(self, client: str, profile: Profile) -> bool:
         """
-        Save or update a profile.
+        Internal method to save or update a profile.
 
         Args:
             client: Client name
@@ -1130,6 +1140,29 @@ class SQLiteStorage:
         saved_count, _ = self.save_comments_batch(account, comments)
         return f"sqlite:{self.db_path}:comments:{account}:{platform}"
 
+    def save_profile(
+        self,
+        profile: Profile,
+        account: str,
+        platform: str
+    ) -> str:
+        """
+        Save profile to storage (StorageBackend interface).
+
+        This method provides compatibility with StorageBackend interface.
+
+        Args:
+            profile: Profile object
+            account: Account username (used as client)
+            platform: Platform name
+
+        Returns:
+            Description of saved data
+        """
+        # Use internal method with client=account
+        self._save_profile_internal(account, profile)
+        return f"sqlite:{self.db_path}:profile:{account}:{platform}"
+
     def save_extraction_result(
         self,
         posts: List[Post],
@@ -1162,8 +1195,7 @@ class SQLiteStorage:
             results["comments"] = self.save_comments(comments, account, platform)
 
         if profile:
-            self.save_profile(account, profile)
-            results["profile"] = f"sqlite:{self.db_path}:profile:{account}:{platform}"
+            results["profile"] = self.save_profile(profile, account, platform)
 
         return results
 
@@ -1172,13 +1204,14 @@ class SQLiteStorageAdapter:
     """
     Adapter to make SQLiteStorage compatible with StorageFactory.
 
-    StorageFactory expects backends that take output_dir as constructor arg,
-    but SQLiteStorage takes db_path. This adapter bridges that gap.
+    StorageFactory expects backends that take output_dir as constructor arg.
+    Now that SQLiteStorage supports output_dir directly, this adapter simply
+    forwards the call.
     """
 
     def __new__(cls, output_dir: str):
         """
-        Create SQLiteStorage with db path derived from output_dir.
+        Create SQLiteStorage with output_dir.
 
         Args:
             output_dir: Directory for output files (db file placed inside)
@@ -1186,8 +1219,7 @@ class SQLiteStorageAdapter:
         Returns:
             SQLiteStorage instance
         """
-        db_path = Path(output_dir) / "storage.db"
-        return SQLiteStorage(str(db_path))
+        return SQLiteStorage(output_dir=output_dir)
 
 
 # Register SQLiteStorage with StorageFactory for unified access

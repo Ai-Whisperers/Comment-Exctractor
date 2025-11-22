@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeout
 from .base_page import BasePage
 from ..selectors import Selectors
 
@@ -37,7 +37,7 @@ class CommentsSection(BasePage):
         except Exception as e:
             logger.debug(f"Failed to expand comments: {e}")
 
-    def _load_more_comments(self, max_loads: int = 10) -> None:
+    def _load_more_comments(self, max_loads: int = 100) -> None:
         """Load more comments by clicking the load more button."""
         for i in range(max_loads):
             try:
@@ -51,10 +51,10 @@ class CommentsSection(BasePage):
                     self.wait(1500)
                 else:
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 break
 
-    def _expand_replies(self, max_expands: int = 20) -> None:
+    def _expand_replies(self, max_expands: int = 100) -> None:
         """Expand reply threads to get nested comments."""
         expanded = 0
         for i in range(max_expands):
@@ -71,7 +71,7 @@ class CommentsSection(BasePage):
                     expanded += 1
                 else:
                     break
-            except Exception:
+            except (PlaywrightTimeout, TimeoutError):
                 break
 
         if expanded > 0:
