@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..core.exceptions import ValidationError
+# Note: ValidationError is imported lazily in functions to avoid circular imports
+# from ..core.exceptions import ValidationError
 
 
 # Patterns to detect sensitive fields
@@ -244,6 +245,9 @@ def validate_name(value: str, field_name: str) -> None:
     Raises:
         ValidationError: If value is invalid
     """
+    # Lazy import to avoid circular dependency
+    from ..core.exceptions import ValidationError
+
     if not value:
         raise ValidationError(f"{field_name} cannot be empty", field=field_name)
 
@@ -358,6 +362,9 @@ def validate_path_no_traversal(path: str, field_name: str = "path") -> None:
     Raises:
         ValidationError: If path contains traversal attempts
     """
+    # Lazy import to avoid circular dependency
+    from ..core.exceptions import ValidationError
+
     if not path:
         return
 
@@ -389,6 +396,9 @@ def ensure_path_within_base(
     Raises:
         ValidationError: If path escapes base directory
     """
+    # Lazy import to avoid circular dependency
+    from ..core.exceptions import ValidationError
+
     if not validate_safe_path(base_dir, target_path):
         raise ValidationError(
             f"{field_name} escapes base directory: {target_path}",
@@ -417,6 +427,9 @@ def create_safe_path(
     Raises:
         ValidationError: If resulting path escapes base
     """
+    # Lazy import to avoid circular dependency
+    from ..core.exceptions import ValidationError
+
     # Sanitize all components
     safe_components = [sanitize_path_component(c) for c in components]
 

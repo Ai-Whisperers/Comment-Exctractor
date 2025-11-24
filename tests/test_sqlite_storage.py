@@ -79,7 +79,8 @@ class TestSQLiteStorageAdapter:
         try:
             storage = SQLiteStorageAdapter(tmpdir)
             assert isinstance(storage, SQLiteStorage)
-            assert storage.db_path == Path(tmpdir) / "storage.db"
+            # Resolve both paths to handle Windows short path names (8.3 format)
+            assert storage.db_path.resolve() == (Path(tmpdir) / "storage.db").resolve()
         finally:
             import shutil
             shutil.rmtree(tmpdir, ignore_errors=True)
