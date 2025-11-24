@@ -358,12 +358,17 @@ class Settings(BaseSettings):
         paths = get_paths()
 
         if platform_lower == "facebook":
+            # Check for browser profile override (for parallel execution)
+            browser_profile = os.environ.get(
+                "BROWSER_PROFILE_OVERRIDE",
+                str(paths.browser_profile_path("facebook"))
+            )
             config = {
                 "cookies": self.facebook.cookies_file,
                 "pages": self.facebook.pages_per_request,
                 "email": self.facebook.email,
                 "password": self.facebook.password,
-                "browser_profile": str(paths.browser_profile_path("facebook")),
+                "browser_profile": browser_profile,
                 "headless": False,
             }
             # Add proxies if enabled

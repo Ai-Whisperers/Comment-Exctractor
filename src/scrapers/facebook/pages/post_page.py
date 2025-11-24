@@ -65,10 +65,23 @@ class PostPage(BasePage):
         post_links = []
         seen_post_ids = set()  # Track by post ID, not URL, to avoid duplicates
         scroll_attempts = 0
-        max_scroll_attempts = 50 if scroll_all else 10
+
+        # Scale scroll attempts based on target posts
+        # Rule of thumb: ~3 scrolls per post for Facebook's lazy loading
+        if scroll_all:
+            max_scroll_attempts = 500  # For very large extractions
+        elif max_posts > 100:
+            max_scroll_attempts = max_posts * 3  # ~3 scrolls per post
+        elif max_posts > 50:
+            max_scroll_attempts = 200
+        else:
+            max_scroll_attempts = 100  # Minimum for small extractions
+
         no_new_posts_count = 0
         existing_posts_found = 0
         known_post_ids = known_post_ids or set()
+
+        logger.info(f"POST COLLECTION CONFIG | max_posts={max_posts} | max_scrolls={max_scroll_attempts}")
 
         # Find all post links using multiple selectors
         # Facebook posts can have various URL patterns
@@ -147,9 +160,24 @@ class PostPage(BasePage):
             # Check if we found new posts
             if len(post_links) == previous_count:
                 no_new_posts_count += 1
-                # Be more patient - wait for 10 empty scrolls before stopping
-                if no_new_posts_count >= 10:
-                    logger.info("No new posts found after 10 scrolls, stopping")
+                # Scale patience based on target - more patience for larger extractions
+                max_empty_scrolls = 20 if max_posts > 100 else 15 if max_posts > 50 else 10
+
+                if no_new_posts_count >= max_empty_scrolls:
+                    logger.info(f"No new posts found after {max_empty_scrolls} scrolls, stopping")
+                    # Save debug HTML if we found fewer posts than expected
+                    if len(post_links) < max_posts * 0.5:  # Less than 50% of target
+                        self.save_debug_html(
+                            reason=f"Only {len(post_links)}/{max_posts} posts found after {max_empty_scrolls} scrolls",
+                            context=f"{page_name or 'unknown'}_few_posts",
+                            additional_info={
+                                "posts_found": len(post_links),
+                                "scroll_attempts": scroll_attempts,
+                                "page_name": page_name,
+                                "max_posts_requested": max_posts,
+                                "empty_scroll_limit": max_empty_scrolls
+                            }
+                        )
                     break
             else:
                 no_new_posts_count = 0
@@ -159,10 +187,26 @@ class PostPage(BasePage):
 
             # Scroll to load more with crash protection and throttle detection
             try:
+                # Dismiss any popups that might be blocking (every 10 scrolls)
+                if scroll_attempts % 10 == 0:
+                    self.dismiss_popups()
+
                 # Measure scroll response time to detect throttling
                 scroll_start = time.time()
-                self.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                self.wait(2000)  # Initial wait for content
+
+                # Scroll down aggressively - scroll 3x viewport for faster progress
+                current_scroll = self.evaluate("window.pageYOffset")
+                viewport_height = self.evaluate("window.innerHeight")
+                target_scroll = current_scroll + viewport_height * 3
+
+                self.evaluate(f"window.scrollTo(0, {target_scroll})")
+
+                # Use smart wait with longer timeout for Facebook's lazy loading
+                self.smart_wait_for_content(max_wait_ms=5000, stability_checks=3)
+
+                # Add small delay between scrolls to let Facebook's lazy loading catch up
+                self.wait(500)
+
                 scroll_attempts += 1
 
                 # Measure how long it took
@@ -193,6 +237,19 @@ class PostPage(BasePage):
                 logger.info(f"Scroll {scroll_attempts}/{max_scroll_attempts} | posts: {len(post_links)} | time: {scroll_time_ms/1000:.1f}s")
             except Exception as scroll_error:
                 logger.warning(f"Scroll error (possible browser crash): {scroll_error}")
+                # Save debug HTML for scroll error
+                try:
+                    self.save_debug_html(
+                        reason=f"Scroll error: {str(scroll_error)[:100]}",
+                        context=f"{page_name or 'unknown'}_scroll_error",
+                        additional_info={
+                            "posts_collected": len(post_links),
+                            "scroll_attempts": scroll_attempts,
+                            "error": str(scroll_error)
+                        }
+                    )
+                except Exception:
+                    pass  # Don't fail if debug save fails
                 # Return what we have so far
                 if post_links:
                     logger.info(f"Returning {len(post_links)} posts collected before crash")
@@ -449,11 +506,85 @@ class PostPage(BasePage):
         return 0
 
     def _get_timestamp(self) -> Optional[datetime]:
-        """Get post timestamp."""
-        # Facebook uses relative time, try to parse
-        text = self.get_text(Selectors.Post.POST_TIME, timeout=2000)
-        if text:
-            return self._parse_facebook_time(text)
+        """Get post timestamp using multiple strategies."""
+        # Strategy 1: Try to get datetime attribute from time element (most reliable)
+        try:
+            datetime_str = self.page.evaluate('''
+                () => {
+                    // Look for time element with datetime attribute
+                    const timeElements = document.querySelectorAll('time[datetime]');
+                    for (const time of timeElements) {
+                        const dt = time.getAttribute('datetime');
+                        if (dt) return dt;
+                    }
+
+                    // Try abbr element with data-utime (older Facebook format)
+                    const abbrElements = document.querySelectorAll('abbr[data-utime]');
+                    for (const abbr of abbrElements) {
+                        const utime = abbr.getAttribute('data-utime');
+                        if (utime) {
+                            // Convert Unix timestamp to ISO format
+                            const date = new Date(parseInt(utime) * 1000);
+                            return date.toISOString();
+                        }
+                    }
+
+                    return null;
+                }
+            ''')
+            if datetime_str:
+                logger.debug(f"Found datetime attribute: {datetime_str}")
+                return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
+        except Exception as e:
+            logger.debug(f"Strategy 1 (datetime attr) failed: {e}")
+
+        # Strategy 2: Extract from accessible text with improved selectors
+        try:
+            time_text = self.page.evaluate('''
+                () => {
+                    // Look for timestamp in post header area
+                    // Facebook typically shows time as a link near the profile name
+                    const selectors = [
+                        'a[href*="/posts/"] span',
+                        'a[href*="story_fbid"] span',
+                        'a[href*="pfbid"] span',
+                        'span[id*="jsc"]',  // Facebook timestamp spans often have jsc IDs
+                        'time',
+                    ];
+
+                    for (const selector of selectors) {
+                        const elements = document.querySelectorAll(selector);
+                        for (const el of elements) {
+                            const text = el.textContent.trim();
+                            // Check if it looks like a timestamp
+                            // Patterns: "2h", "15m", "Yesterday", "Nov 15", "November 15 at 3:45 PM"
+                            if (/^(\d+[hmd]|ayer|yesterday|just now|hace|today|hoy)/i.test(text) ||
+                                /^\d{1,2}\s+(de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic|jan|apr|aug|dec)/i.test(text) ||
+                                /^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic|jan|feb|apr|aug|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d/i.test(text)) {
+                                return text;
+                            }
+                        }
+                    }
+
+                    // Fallback: look for any element that has a title with timestamp
+                    const titledElements = document.querySelectorAll('[title]');
+                    for (const el of titledElements) {
+                        const title = el.getAttribute('title');
+                        // Facebook sometimes puts full date in title attribute
+                        if (/\d{1,2}.*\d{4}/.test(title) || /\d{4}/.test(title)) {
+                            return title;
+                        }
+                    }
+
+                    return null;
+                }
+            ''')
+            if time_text:
+                logger.debug(f"Found time text: {time_text}")
+                return self._parse_facebook_time(time_text)
+        except Exception as e:
+            logger.debug(f"Strategy 2 (text extraction) failed: {e}")
+
         return None
 
     def _get_media_type(self) -> str:
@@ -467,39 +598,109 @@ class PostPage(BasePage):
     @staticmethod
     def _parse_facebook_time(time_text: str) -> Optional[datetime]:
         """
-        Parse Facebook's relative time format.
+        Parse Facebook's relative and absolute time formats.
+
+        Handles:
+        - Relative: "2h", "15m", "3d", "Yesterday", "hace 2 horas"
+        - Absolute: "November 15 at 3:45 PM", "15 de noviembre", "Nov 15, 2024"
+        - Full date from title: "Friday, November 15, 2024 at 3:45 PM"
 
         Args:
-            time_text: Time text like "2h", "Yesterday", etc.
+            time_text: Time text from Facebook
 
         Returns:
             Datetime object or None
         """
         from datetime import timedelta
+
         now = datetime.now()
+        original_text = time_text
         time_text = time_text.lower().strip()
 
         try:
-            if "just now" in time_text:
+            # === RELATIVE TIME PATTERNS ===
+
+            # "just now", "ahora", "hace un momento"
+            if any(x in time_text for x in ["just now", "ahora", "hace un momento"]):
                 return now
-            elif "min" in time_text:
-                match = re.search(r"(\d+)", time_text)
-                if match:
-                    minutes = int(match.group(1))
-                    return now - timedelta(minutes=minutes)
-            elif "hour" in time_text or "hr" in time_text:
-                match = re.search(r"(\d+)", time_text)
-                if match:
-                    hours = int(match.group(1))
-                    return now - timedelta(hours=hours)
-            elif "day" in time_text:
-                match = re.search(r"(\d+)", time_text)
-                if match:
-                    days = int(match.group(1))
-                    return now - timedelta(days=days)
-            elif "yesterday" in time_text:
+
+            # Short format: "2h", "15m", "3d"
+            short_match = re.match(r'^(\d+)([hmd])$', time_text)
+            if short_match:
+                value = int(short_match.group(1))
+                unit = short_match.group(2)
+                if unit == 'm':
+                    return now - timedelta(minutes=value)
+                elif unit == 'h':
+                    return now - timedelta(hours=value)
+                elif unit == 'd':
+                    return now - timedelta(days=value)
+
+            # Spanish: "hace X horas/minutos/días"
+            hace_match = re.search(r'hace\s+(\d+)\s+(hora|minuto|día|min|hr|d)', time_text)
+            if hace_match:
+                value = int(hace_match.group(1))
+                unit = hace_match.group(2)
+                if 'min' in unit:
+                    return now - timedelta(minutes=value)
+                elif 'hora' in unit or 'hr' in unit:
+                    return now - timedelta(hours=value)
+                elif 'día' in unit or unit == 'd':
+                    return now - timedelta(days=value)
+
+            # English: "X minutes/hours/days ago"
+            ago_match = re.search(r'(\d+)\s+(minute|hour|day|min|hr)', time_text)
+            if ago_match and 'ago' in time_text:
+                value = int(ago_match.group(1))
+                unit = ago_match.group(2)
+                if 'min' in unit:
+                    return now - timedelta(minutes=value)
+                elif 'hour' in unit or 'hr' in unit:
+                    return now - timedelta(hours=value)
+                elif 'day' in unit:
+                    return now - timedelta(days=value)
+
+            # "yesterday", "ayer"
+            if "yesterday" in time_text or "ayer" in time_text:
                 return now - timedelta(days=1)
-        except (ValueError, AttributeError):
-            pass
+
+            # "today", "hoy"
+            if "today" in time_text or "hoy" in time_text:
+                return now
+
+            # === ABSOLUTE DATE PATTERNS ===
+
+            # Try dateutil parser for complex formats
+            # This handles: "November 15 at 3:45 PM", "Nov 15, 2024", "15/11/2024", etc.
+            try:
+                from dateutil import parser as date_parser
+                # Use original text (with proper case) for parsing
+                parsed = date_parser.parse(original_text, fuzzy=True, dayfirst=True)
+                # If year not in text, assume current year or last year if date is in future
+                if parsed.year == 1900 or str(parsed.year) not in original_text:
+                    parsed = parsed.replace(year=now.year)
+                    if parsed > now:
+                        parsed = parsed.replace(year=now.year - 1)
+                return parsed
+            except Exception:
+                pass
+
+            # === LEGACY PATTERNS (fallback) ===
+
+            if "min" in time_text:
+                match = re.search(r"(\d+)", time_text)
+                if match:
+                    return now - timedelta(minutes=int(match.group(1)))
+            elif "hour" in time_text or "hr" in time_text or "hora" in time_text:
+                match = re.search(r"(\d+)", time_text)
+                if match:
+                    return now - timedelta(hours=int(match.group(1)))
+            elif "day" in time_text or "día" in time_text:
+                match = re.search(r"(\d+)", time_text)
+                if match:
+                    return now - timedelta(days=int(match.group(1)))
+
+        except Exception as e:
+            logger.debug(f"Failed to parse time '{time_text}': {e}")
 
         return None

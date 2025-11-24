@@ -30,6 +30,8 @@ Usage:
 
 import argparse
 import json
+import logging
+import os
 import sys
 import time
 from datetime import datetime, timedelta
@@ -46,6 +48,8 @@ from src.utils.company_output import get_output_manager
 from src.config.settings import get_settings
 from src.scrapers.registry import ScraperRegistry
 from src.scrapers.base import BaseScraper
+
+logger = logging.getLogger(__name__)
 
 
 def setup_logging(log_level: str = "INFO") -> None:
@@ -106,10 +110,34 @@ class CheckpointManager:
         self.checkpoint_file = self.checkpoint_dir / "extraction_checkpoint.json"
 
     def save(self, state: Dict[str, Any]) -> None:
-        """Save current extraction state."""
+        """Save current extraction state atomically."""
+        import tempfile
         state['saved_at'] = datetime.now().isoformat()
-        with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
-            json.dump(state, f, indent=2, default=str)
+
+        # Write to temp file first for atomic operation
+        fd, temp_path = tempfile.mkstemp(
+            dir=self.checkpoint_dir,
+            suffix='.tmp',
+            prefix='checkpoint_'
+        )
+
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=2, default=str)
+
+            # Atomic rename (on same filesystem)
+            os.replace(temp_path, self.checkpoint_file)
+            logger.debug(f"CHECKPOINT | saved atomically: {len(state.get('completed', []))} completed")
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except:
+                pass
+            logger.error(f"CHECKPOINT | failed to save: {e}")
+            raise
 
     def load(self) -> Optional[Dict[str, Any]]:
         """Load previous checkpoint if exists."""
@@ -132,6 +160,57 @@ class CheckpointManager:
         if state:
             return set(state.get('completed', []))
         return set()
+
+
+def load_existing_post_ids(company_id: str, platform: Platform, identifier: str) -> set:
+    """
+    Load existing post IDs from saved exports for a specific account.
+
+    Args:
+        company_id: Company ID (e.g., 'personal-py')
+        platform: Platform enum
+        identifier: Account identifier (e.g., 'personalpy')
+
+    Returns:
+        Set of post IDs that have already been extracted
+    """
+    from glob import glob
+
+    # Find the export directory for this account
+    export_dir = Path(__file__).parent.parent / "data" / "exports" / company_id / platform.value / identifier
+
+    if not export_dir.exists():
+        return set()
+
+    existing_ids = set()
+
+    # Find all posts files
+    posts_files = list(export_dir.glob("*_posts.json"))
+
+    for posts_file in posts_files:
+        try:
+            with open(posts_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+                # Handle both formats: list of posts or dict with 'posts' key
+                if isinstance(data, list):
+                    posts = data
+                elif isinstance(data, dict) and 'posts' in data:
+                    posts = data['posts']
+                else:
+                    continue
+
+                for post in posts:
+                    if 'id' in post:
+                        existing_ids.add(post['id'])
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            logger.debug(f"Could not load post IDs from {posts_file}: {e}")
+            continue
+
+    if existing_ids:
+        logger.info(f"SKIP EXISTING | loaded {len(existing_ids)} existing post IDs for {platform.value}/{identifier}")
+
+    return existing_ids
 
 
 def save_results(
@@ -222,7 +301,8 @@ def run_extraction(
     max_posts: int = 10,
     headless: bool = True,
     dry_run: bool = False,
-    resume: bool = False
+    resume: bool = False,
+    skip_existing: bool = False
 ) -> dict:
     """Run optimized batch extraction for companies.
 
@@ -351,8 +431,19 @@ def run_extraction(
                 results: List[ExtractionResult] = []
 
                 try:
+                    # Load existing post IDs if skip_existing is enabled
+                    known_post_ids = None
+                    if skip_existing:
+                        known_post_ids = load_existing_post_ids(company_id, platform, identifier)
+                        if known_post_ids:
+                            print(f"    Skipping {len(known_post_ids)} existing posts")
+
                     # Extract using the shared scraper
-                    for result in scraper.get_posts_with_comments(identifier, max_posts=max_posts):
+                    for result in scraper.get_posts_with_comments(
+                        identifier,
+                        max_posts=max_posts,
+                        known_post_ids=known_post_ids
+                    ):
                         results.append(result)
                         print(f"    Post {len(results)}: {result.post.platform_id} | "
                               f"Likes: {result.post.likes:,} | "
@@ -491,6 +582,11 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level"
     )
+    parser.add_argument(
+        "--no-skip-existing",
+        action="store_true",
+        help="Re-extract all posts even if already extracted (default: skip existing)"
+    )
 
     args = parser.parse_args()
 
@@ -518,7 +614,8 @@ def main():
         max_posts=args.max_posts,
         headless=headless,
         dry_run=args.dry_run,
-        resume=args.resume
+        resume=args.resume,
+        skip_existing=not args.no_skip_existing
     )
 
 

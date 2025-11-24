@@ -186,6 +186,14 @@ class FacebookScraper(BaseScraper):
                 account_id=account_id
             )
 
+        # Navigate to posts feed for better post discovery
+        # The main profile page often shows limited posts (stories, pinned items)
+        # The /posts URL shows the full posts feed
+        posts_feed_url = Selectors.URLs.posts_feed(account_id)
+        logger.info(f"NAVIGATE | posts_feed | {posts_feed_url}")
+        self._page.goto(posts_feed_url, wait_until="domcontentloaded")
+        self._page.wait_for_timeout(3000)  # Wait for feed to load
+
         # Collect post links
         scroll_all = max_posts > 50
         # Pass known_post_ids to skip existing posts

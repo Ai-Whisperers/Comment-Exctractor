@@ -154,8 +154,18 @@ class AdaptiveRateLimiter:
 
     def _clean_old_requests(self):
         """Remove requests older than 1 minute from tracking."""
+        # Hard limit to prevent unbounded growth
+        if len(self._request_times) > 1000:
+            self._request_times = self._request_times[-100:]
+            logger.debug("RATE LIMIT | cleaned old request history (hard limit)")
+            return
+
         cutoff = time.time() - 60
+        original_len = len(self._request_times)
         self._request_times = [t for t in self._request_times if t > cutoff]
+
+        if len(self._request_times) < original_len:
+            logger.debug(f"RATE LIMIT | cleaned {original_len - len(self._request_times)} old requests")
 
     def _is_in_cooldown(self) -> bool:
         """Check if we're in cooldown period after rate limit."""

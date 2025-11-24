@@ -145,5 +145,10 @@ class Selectors:
             return f"https://www.facebook.com/{page_name}"
 
         @staticmethod
+        def posts_feed(page_name: str) -> str:
+            """Get URL for a page's posts feed (shows more posts than main page)."""
+            return f"https://www.facebook.com/{page_name}/posts"
+
+        @staticmethod
         def post(post_id: str) -> str:
             return f"https://www.facebook.com/posts/{post_id}"
