@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-11-22T21:00:10.976396",
+  "companies": {
+    "tigo-py": {
+      "name": "Tigo Paraguay",
+      "accounts": {
+        "facebook/TigoParaguay": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\tigo-py\\facebook\\TigoParaguay\\20251122_210010_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\tigo-py\\facebook\\TigoParaguay\\20251122_210010_comments.json",
+          "posts_count": 3,
+          "comments_count": 61
+        }
+      }
+    }
+  },
+  "totals": {
+    "accounts": 1,
+    "posts": 3,
+    "comments": 61,
+    "errors": 1
+  },
+  "saved_at": "2025-11-22T21:01:46.985604"
+}

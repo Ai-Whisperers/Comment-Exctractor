@@ -1,0 +1,132 @@
+{
+  "version": "1.0",
+  "description": "Paraguay Telecom Companies - Social Media Accounts Registry",
+  "companies": [
+    {
+      "id": "personal-py",
+      "name": "Personal Paraguay",
+      "industry": "telecom",
+      "country": "Paraguay",
+      "accounts": [
+        {
+          "platform": "facebook",
+          "identifier": "personalpy",
+          "url": "https://www.facebook.com/personalpy",
+          "display_name": "Personal Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "instagram",
+          "identifier": "personalpy",
+          "url": "https://www.instagram.com/personalpy",
+          "display_name": "Personal Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "twitter",
+          "identifier": "personalpy",
+          "url": "https://twitter.com/personalpy",
+          "display_name": "Personal Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "linkedin",
+          "identifier": "personal-paraguay",
+          "url": "https://www.linkedin.com/company/personal-paraguay",
+          "display_name": "Personal Paraguay",
+          "enabled": true
+        }
+      ],
+      "metadata": {
+        "website": "https://www.personal.com.py",
+        "notes": "Main competitor analysis target"
+      }
+    },
+    {
+      "id": "tigo-py",
+      "name": "Tigo Paraguay",
+      "industry": "telecom",
+      "country": "Paraguay",
+      "accounts": [
+        {
+          "platform": "facebook",
+          "identifier": "TigoParaguay",
+          "url": "https://www.facebook.com/TigoParaguay",
+          "display_name": "Tigo Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "instagram",
+          "identifier": "tigoparaguay",
+          "url": "https://www.instagram.com/tigoparaguay",
+          "display_name": "Tigo Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "twitter",
+          "identifier": "tigoparaguay",
+          "url": "https://twitter.com/tigoparaguay",
+          "display_name": "Tigo Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "linkedin",
+          "identifier": "tigo-paraguay",
+          "url": "https://www.linkedin.com/company/tigo-paraguay",
+          "display_name": "Tigo Paraguay",
+          "enabled": true
+        }
+      ],
+      "metadata": {
+        "website": "https://www.tigo.com.py",
+        "notes": "Primary competitor - Millicom subsidiary"
+      }
+    },
+    {
+      "id": "claro-py",
+      "name": "Claro Paraguay",
+      "industry": "telecom",
+      "country": "Paraguay",
+      "accounts": [
+        {
+          "platform": "facebook",
+          "identifier": "ClaroParaguay",
+          "url": "https://www.facebook.com/claropy",
+          "display_name": "Claro Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "instagram",
+          "identifier": "claroparaguay",
+          "url": "https://www.instagram.com/claropy/",
+          "display_name": "Claro Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "twitter",
+          "identifier": "ClaroParaguay",
+          "url": "https://twitter.com/ClaroParaguay",
+          "display_name": "Claro Paraguay",
+          "enabled": true
+        },
+        {
+          "platform": "linkedin",
+          "identifier": "claro-paraguay",
+          "url": "https://www.linkedin.com/company/claro-paraguay",
+          "display_name": "Claro Paraguay",
+          "enabled": true
+        }
+      ],
+      "metadata": {
+        "website": "https://www.claro.com.py",
+        "notes": "Secondary competitor - America Movil subsidiary"
+      }
+    }
+  ],
+  "extraction_defaults": {
+    "max_posts": 10,
+    "max_comments_per_post": 100,
+    "include_replies": true,
+    "headless": true
+  }
+}

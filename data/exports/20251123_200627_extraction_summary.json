@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-11-23T20:06:27.732677",
+  "companies": {
+    "claro-py": {
+      "name": "Claro Paraguay",
+      "accounts": {
+        "facebook/ClaroParaguay": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\claro-py\\facebook\\ClaroParaguay\\20251123_200627_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\claro-py\\facebook\\ClaroParaguay\\20251123_200627_comments.json",
+          "posts_count": 5,
+          "comments_count": 17
+        }
+      }
+    }
+  },
+  "totals": {
+    "accounts": 1,
+    "posts": 5,
+    "comments": 17,
+    "errors": 0
+  },
+  "saved_at": "2025-11-23T20:08:30.478578"
+}

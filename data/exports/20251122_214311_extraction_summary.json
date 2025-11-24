@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-11-22T21:43:11.827006",
+  "companies": {
+    "personal-py": {
+      "name": "Personal Paraguay",
+      "accounts": {
+        "facebook/personalpy": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\personal-py\\facebook\\personalpy\\20251122_214311_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\personal-py\\facebook\\personalpy\\20251122_214311_comments.json",
+          "posts_count": 5,
+          "comments_count": 157
+        }
+      }
+    },
+    "tigo-py": {
+      "name": "Tigo Paraguay",
+      "accounts": {
+        "facebook/TigoParaguay": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\tigo-py\\facebook\\TigoParaguay\\20251122_214311_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\tigo-py\\facebook\\TigoParaguay\\20251122_214311_comments.json",
+          "posts_count": 4,
+          "comments_count": 132
+        }
+      }
+    },
+    "claro-py": {
+      "name": "Claro Paraguay",
+      "accounts": {
+        "facebook/ClaroParaguay": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\claro-py\\facebook\\ClaroParaguay\\20251122_214311_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\claro-py\\facebook\\ClaroParaguay\\20251122_214311_comments.json",
+          "posts_count": 1,
+          "comments_count": 1
+        }
+      }
+    }
+  },
+  "totals": {
+    "accounts": 3,
+    "posts": 10,
+    "comments": 290,
+    "errors": 0
+  },
+  "saved_at": "2025-11-22T21:47:01.483651"
+}

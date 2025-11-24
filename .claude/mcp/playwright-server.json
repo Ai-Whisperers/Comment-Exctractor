@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "description": "Browser automation via accessibility tree for web scraping, testing, and navigation. Uses Playwright's semantic understanding instead of screenshots."
+    }
+  }
+}

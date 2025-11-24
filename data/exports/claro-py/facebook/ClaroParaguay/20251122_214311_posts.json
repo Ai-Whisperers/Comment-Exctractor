@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "company_id": "claro-py",
+    "platform": "facebook",
+    "account": "ClaroParaguay",
+    "extracted_at": "2025-11-22T21:43:11.827006",
+    "total_posts": 1
+  },
+  "posts": [
+    {
+      "id": "pfbid032d3U3BwNENm26fkU7cnBo5umMN7xZuGHi",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid032d3U3BwNENm26fkU7cnBo5umMN7xZuGHi5dRhrWhFawfgqNeLwhT5HWFTF473FBKl",
+      "text": "¡Arrancó el segundo día del Black Friday mas Tech del país! \n... Ver más",
+      "published_at": null,
+      "likes": 7,
+      "comments_count": 1,
+      "shares": 0,
+      "media_type": "text"
+    }
+  ]
+}

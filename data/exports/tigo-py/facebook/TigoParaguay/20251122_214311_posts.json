@@ -1,0 +1,55 @@
+{
+  "metadata": {
+    "company_id": "tigo-py",
+    "platform": "facebook",
+    "account": "TigoParaguay",
+    "extracted_at": "2025-11-22T21:43:11.827006",
+    "total_posts": 4
+  },
+  "posts": [
+    {
+      "id": "755680010754621",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=755680010754621",
+      "text": "Vicente estudia\n, vos mirás el partido\n, mamá escucha su podcast.​",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 53,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "1068705881796839",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1068705881796839",
+      "text": "Ya no hay excusas para estar siempre conectado",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 54,
+      "shares": 0,
+      "media_type": "video"
+    },
+    {
+      "id": "pfbid02yQWgD2rJaTjmLsRKfqyAuaB4mtmizamdx",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/TigoParaguay/posts/pfbid02yQWgD2rJaTjmLsRKfqyAuaB4mtmizamdxsrKdeV6mWAnYVmMdv82h2e1oe4BoxtDl?comment_id=2146125492583312",
+      "text": "Hola busco marido",
+      "published_at": null,
+      "likes": 2540,
+      "comments_count": 9,
+      "shares": 14,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid0FyTJSkZaAXGjgLhkjdQzQFpjhCP1Yz9kgU",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/TigoParaguay/posts/pfbid0FyTJSkZaAXGjgLhkjdQzQFpjhCP1Yz9kgUivPENDgTPfVcFbQTJT1Cr8yYZ2NZhMl?comment_id=1200046795365445",
+      "text": "El Rival mas Difícil es tu Mente! \n #boxeo #boxinglife #boxing",
+      "published_at": null,
+      "likes": 12000,
+      "comments_count": 16,
+      "shares": 961,
+      "media_type": "text"
+    }
+  ]
+}

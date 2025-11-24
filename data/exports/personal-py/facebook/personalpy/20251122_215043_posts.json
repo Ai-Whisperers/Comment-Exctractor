@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "company_id": "personal-py",
+    "platform": "facebook",
+    "account": "personalpy",
+    "extracted_at": "2025-11-22T21:50:43.847267",
+    "total_posts": 5
+  },
+  "posts": [
+    {
+      "id": "1661801464661070",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1661801464661070",
+      "text": "La pelea del siglo",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 1,
+      "shares": 0,
+      "media_type": "video"
+    },
+    {
+      "id": "1053940012802310",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1053940012802310",
+      "text": "Marilina también tiene El Wifi en su Casa de Personal. \n \n Solicitá la fibra óptica más rápida del país con el vendedor de Personal. #ElWifiEnMiCasaEsPersonal",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 53,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "511225811862388",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=511225811862388",
+      "text": "Todos tienen El Wifi en su casa de Personal, porque ¡te duplicamos todo! Escribí a Pichi, y solicitá la mejor conexión del país, \n #ElWifiEnMiCasaEsPersonal.",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 17,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid0PpeByUJDcKBirMNmoeNCaKeMAUhDwJhEQX",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/personalpy/posts/pfbid0PpeByUJDcKBirMNmoeNCaKeMAUhDwJhEQXQTk7EZNo2zf6PB1PmBEWUfGMRGFeEVl?comment_id=1855422408380449",
+      "text": "Almacenar y transferir archivos nunca antes fue tan fácil. En esta nota te contamos todo lo que necesitas saber.",
+      "published_at": null,
+      "likes": 3,
+      "comments_count": 4,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid0QABz4Wkmwn1EFRfEHSzBUv4BSrWjwtG8Zo",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/personalpy/posts/pfbid0QABz4Wkmwn1EFRfEHSzBUv4BSrWjwtG8ZotS6bxaZhYhnf13PAznk71rdqdcnvvul?comment_id=1270517664836135",
+      "text": "¡Arrancó el segundo día del Black Friday mas Tech del país! \n... Ver más",
+      "published_at": null,
+      "likes": 7,
+      "comments_count": 8,
+      "shares": 0,
+      "media_type": "text"
+    }
+  ]
+}

@@ -138,11 +138,6 @@ logs/
 *.sqlite
 *.sqlite3
 
-# Data folder - cache and large files excluded, structure kept
-data/.cache/
-
-# Browser profiles (contain session data)
-browser_profiles/
 
 # Credentials and secrets
 credentials.json
@@ -152,9 +147,6 @@ secrets.json
 *.crt
 
 # Export files
-exports/
-*.csv
-*.json
 !pytest.ini
 !package.json
 !*.config.json

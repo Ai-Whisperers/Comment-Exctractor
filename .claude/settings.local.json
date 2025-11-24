@@ -1,0 +1,230 @@
+{
+  "env": {
+    "PYTHONPATH": ".:./api",
+    "APP_ENV": "development",
+    "USE_FAKE_REDIS": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(pwd:*)",
+      "Bash(mkdir:*)",
+      "Bash(rmdir:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(copy:*)",
+      "Bash(touch:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(du:*)",
+      "Bash(tree:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(timeout 5 find:*)",
+      "Bash(timeout 10 find:*)",
+      "Bash(diff:*)",
+      "Bash(md5sum:*)",
+      "Bash(echo:*)",
+      "Bash(test:*)",
+      "Bash(for:*)",
+      "Bash(if:*)",
+      "Bash(then:*)",
+      "Bash(else:*)",
+      "Bash(fi:*)",
+      "Bash(do:*)",
+      "Bash(done:*)",
+      "Bash(chmod:*)",
+      "Bash(sleep:*)",
+      "Bash(curl:*)",
+      "Bash(where:*)",
+      "Bash(which:*)",
+      "Bash(PYTHONPATH=:*)",
+      "Bash(SET PYTHONPATH=:*)",
+      "Bash(export PYTHONPATH=:*)",
+      "Bash(python:*)",
+      "Bash(./venv/Scripts/python:*)",
+      "Bash(timeout 60 ./venv/Scripts/python:*)",
+      "Bash(timeout 120 ./venv/Scripts/python:*)",
+      "Bash(bash:*)",
+      "Bash(bash scripts/:*)",
+      "Bash(git:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(pip list:*)",
+      "Bash(pip show:*)",
+      "Bash(pip freeze:*)",
+      "Bash(kaggle datasets:*)",
+      "Bash(unzip:*)",
+      "Bash(tar:*)",
+      "Bash(redis-server:*)",
+      "Bash(redis-cli:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(gh:*)",
+      "Bash(wsl:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell -Command:*)",
+      "Read(C:/Users/Alejandro/.claude/projects/**)",
+      "Read(//c/Users/Alejandro/.claude/projects/**)",
+      "Bash(then rm -rf \"$dir\")",
+      "Read(//c/Users/Alejandro/**)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Comprehensive Claude Code configuration optimization\n\nBased on deep analysis of 84 conversations (5,808 tool calls, 462 user requests):\n\nPERFORMANCE IMPROVEMENTS:\n- Permission prompts: Reduced from ~26/session to ~5/session (81% reduction)\n- Auto-allowed permissions: Increased from 14 to 115 (721% increase)\n- Critical fix: Auto-allow ''cd'' command (was 1,342 manual approvals)\n- Workflow hooks: Increased from 2 to 7 (250% increase)\n\nCONFIGURATION UPDATES:\n- .claude/settings.local.json: Comprehensive permissions (115 allow, 21 deny, 12 ask)\n- CLAUDE.md: Enhanced with workflow insights and data-driven recommendations\n- Added 3 new slash commands: /refactor, /debug, /analyze-usage\n\nNEW CAPABILITIES:\n- Conversation analysis tool: Export and analyze usage patterns\n- Monthly optimization cycle: Data-driven configuration improvements\n- Intelligent hooks: Automated test reminders, documentation checks\n\nANALYSIS TOOLS:\n- scripts/analysis/export_claude_conversations.py (600+ lines)\n- Comprehensive documentation and quick-start guides\n- Automated suggestion generation\n\nWORKFLOW INSIGHTS (Data-Driven):\n- Top activities: Documentation (33%), Testing (31%), Analysis (23%)\n- Tool distribution: Bash (44%), Read (16%), TodoWrite (13%)\n- Time savings: 80-120 minutes/month in reduced friction\n\nSECURITY:\n- 21 security blocks for credentials and destructive commands\n- Credential files (.env, SSH keys, AWS creds) blocked\n- Risky operations require confirmation\n\nGenerated with Claude Code\nhttps://claude.com/claude-code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" ./venv/Scripts/python -m pytest:*)",
+      "Bash(git commit --no-verify -m \"$(cat <<''EOF''\nfeat: Comprehensive Claude Code configuration optimization\n\nBased on deep analysis of 84 conversations (5,808 tool calls, 462 user requests):\n\nPERFORMANCE IMPROVEMENTS:\n- Permission prompts: Reduced from ~26/session to ~5/session (81% reduction)\n- Auto-allowed permissions: Increased from 14 to 115 (721% increase)\n- Critical fix: Auto-allow ''cd'' command (was 1,342 manual approvals)\n- Workflow hooks: Increased from 2 to 7 (250% increase)\n\nCONFIGURATION UPDATES:\n- .claude/settings.local.json: Comprehensive permissions (115 allow, 21 deny, 12 ask)\n- CLAUDE.md: Enhanced with workflow insights and data-driven recommendations\n- Added 3 new slash commands: /refactor, /debug, /analyze-usage\n\nNEW CAPABILITIES:\n- Conversation analysis tool: Export and analyze usage patterns\n- Monthly optimization cycle: Data-driven configuration improvements\n- Intelligent hooks: Automated test reminders, documentation checks\n\nANALYSIS TOOLS:\n- scripts/analysis/export_claude_conversations.py (600+ lines)\n- Comprehensive documentation and quick-start guides\n- Automated suggestion generation\n\nWORKFLOW INSIGHTS (Data-Driven):\n- Top activities: Documentation (33%), Testing (31%), Analysis (23%)\n- Tool distribution: Bash (44%), Read (16%), TodoWrite (13%)\n- Time savings: 80-120 minutes/month in reduced friction\n\nSECURITY:\n- 21 security blocks for credentials and destructive commands\n- Credential files (.env, SSH keys, AWS creds) blocked\n- Risky operations require confirmation\n\nGenerated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git show:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Restore accidentally deleted root documentation files\n\nRestores:\n- README.md\n- CHANGELOG.md\n- CONTRIBUTING.md\n\nThese files were accidentally deleted in commit 251b65b during the\nClaude Code configuration optimization. Repository organization check\nnow passes without errors.\n\nGenerated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(xargs -I {} sh -c 'stat -c \"\"\"\"%s %n\"\"\"\" \"\"\"\"{}\"\"\"\" 2>/dev/null || echo \"\"\"\"0 {}\"\"\"\"')",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" ./venv/Scripts/python:*)",
+      "Bash(PYTHONPATH=\".:api:$PYTHONPATH\" python:*)",
+      "Bash(PYTHONPATH=\".\" ./venv/Scripts/python -m pytest:*)",
+      "Bash(timeout 180 python:*)",
+      "Bash(export PYTHONPATH=\".\")",
+      "Bash(timeout:*)",
+      "SlashCommand(/run-tests)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" timeout 120 ./venv/Scripts/python -m pytest:*)",
+      "Bash(.gitignore)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" timeout 30 ./venv/Scripts/python -m pytest:*)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" timeout 60 ./venv/Scripts/python -m pytest:*)",
+      "Bash(PYTHONPATH=\".:api:$PYTHONPATH\" timeout 180 python:*)",
+      "Bash(PYTHONPATH=\".:api:$PYTHONPATH\" timeout 180 ./api/venv/Scripts/python:*)",
+      "Bash(findstr:*)",
+      "Bash(./venv/Scripts/pip:*)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" python:*)",
+      "Bash(PYTHONPATH=\".:../../api:$PYTHONPATH\" ../../api/venv/Scripts/python:*)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" celery:*)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" timeout 300 ./venv/Scripts/python:*)",
+      "Bash(nul)",
+      "Bash(PYTHONPATH=\".:$PYTHONPATH\" timeout 180 ./venv/Scripts/python:*)",
+      "Bash(xargs -I {} bash -c \"echo ''''=== {} ==='''' && head -20 {}\")"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/kaggle.json)",
+      "Read(**/.aws/credentials)",
+      "Read(**/.ssh/id_*)",
+      "Read(**/id_rsa*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ~:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(docker system prune -a:*)",
+      "Bash(docker rm -f:*)",
+      "Bash(killall:*)",
+      "Bash(pkill:*)",
+      "Bash(sudo:*)",
+      "Bash(su:*)"
+    ],
+    "ask": [
+      "Bash(pip install:*)",
+      "Bash(npm install:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(docker-compose down -v:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(rm -rf api/:*)",
+      "Bash(rm -rf docs:*)",
+      "Bash(rm -rf node_modules:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge main:*)",
+      "Bash(docker system prune:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git commit:*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/development/check_repo_organization.sh",
+            "timeout": 30000
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push:*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Pre-push: Ensure all tests pass before pushing'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write(*.py)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Python file created. Consider: /run-tests'",
+            "timeout": 1000
+          }
+        ]
+      },
+      {
+        "matcher": "Edit(*.py)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Python file modified. Verify with: /run-tests'",
+            "timeout": 1000
+          }
+        ]
+      },
+      {
+        "matcher": "Write(*.md)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Documentation updated. Review for completeness.'",
+            "timeout": 1000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Customer Feedback Analyzer | Session started | Branch: IvanDev | Context: CLAUDE.md'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Session ended | Outstanding changes? Run: git status'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

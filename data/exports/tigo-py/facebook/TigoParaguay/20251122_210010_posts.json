@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "company_id": "tigo-py",
+    "platform": "facebook",
+    "account": "TigoParaguay",
+    "extracted_at": "2025-11-22T21:00:10.976396",
+    "total_posts": 3
+  },
+  "posts": [
+    {
+      "id": "pfbid0uZ4y2MvUj428k3qhSF7Yk3BpnG4ZrpfxTN",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/TigoParaguay/posts/pfbid0uZ4y2MvUj428k3qhSF7Yk3BpnG4ZrpfxTNQj9URZTSDGoEaFa7GdML3Qzcf3rWEql?comment_id=2146125492583312",
+      "text": "Aguanta un poco más mi rey, se viene el aguinaldo",
+      "published_at": null,
+      "likes": 5060,
+      "comments_count": 9,
+      "shares": 1686,
+      "media_type": "text"
+    },
+    {
+      "id": "755680010754621",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=755680010754621",
+      "text": "",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 2,
+      "shares": 0,
+      "media_type": "video"
+    },
+    {
+      "id": "1068705881796839",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1068705881796839",
+      "text": "Ya no hay excusas para estar siempre conectado",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 50,
+      "shares": 0,
+      "media_type": "video"
+    }
+  ]
+}

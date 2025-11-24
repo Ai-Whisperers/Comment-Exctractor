@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "version": "2.0",
+    "extraction_type": "partial",
+    "is_complete": true
+  },
+  "account_id": "personalpy",
+  "platform": "instagram",
+  "collected_at": "2025-11-21T19:39:39.850005",
+  "total_posts": 5,
+  "posts_with_comments": 5,
+  "posts_with_errors": 0,
+  "total_comments": 25,
+  "posts": [
+    {
+      "post_id": "DRUcWfeDBCp",
+      "url": "https://www.instagram.com/personalpy/p/DRUcWfeDBCp/",
+      "likes": 12,
+      "comments_count": 2
+    },
+    {
+      "post_id": "DRPfMNIgoc-",
+      "url": "https://www.instagram.com/personalpy/reel/DRPfMNIgoc-/",
+      "likes": 35,
+      "comments_count": 9
+    },
+    {
+      "post_id": "DRK78NIkVDJ",
+      "url": "https://www.instagram.com/personalpy/p/DRK78NIkVDJ/",
+      "likes": 69,
+      "comments_count": 1
+    },
+    {
+      "post_id": "DRH48JYD8ET",
+      "url": "https://www.instagram.com/personalpy/p/DRH48JYD8ET/",
+      "likes": 4,
+      "comments_count": 10
+    },
+    {
+      "post_id": "DRFbDelkoGA",
+      "url": "https://www.instagram.com/personalpy/p/DRFbDelkoGA/",
+      "likes": 9,
+      "comments_count": 3
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "company_id": "vox-py",
+    "platform": "instagram",
+    "account": "voxparaguay",
+    "extracted_at": "2025-11-21T21:27:12.983917",
+    "total_comments": 10
+  },
+  "comments": [
+    {
+      "id": "hCLH6nxZiU_0",
+      "post_id": "hCLH6nxZiU",
+      "text": "Nunca me respondieron @voxparaguay",
+      "author": "teresitamendezarguello",
+      "author_id": "teresitamendezarguello",
+      "published_at": "2013-12-02T20:23:34+00:00",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "hCLH6nxZiU_1",
+      "post_id": "hCLH6nxZiU",
+      "text": "Hola voxparaguay, soy de San Carlos del Apa y quiero pasarme a vox. Qué tal la cobertura?",
+      "author": "teresitamendezarguello",
+      "author_id": "teresitamendezarguello",
+      "published_at": "2013-11-25T21:16:35+00:00",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8Y461xZi__0",
+      "post_id": "g8Y461xZi_",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-11-20T16:43:33+00:00",
+      "likes": 7,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8YqiPxZiu_0",
+      "post_id": "g8YqiPxZiu",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-11-20T16:41:35+00:00",
+      "likes": 1,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8YXP8RZiR_0",
+      "post_id": "g8YXP8RZiR",
+      "text": "Mi vidaaa <3",
+      "author": "yenisjoplin",
+      "author_id": "yenisjoplin",
+      "published_at": "2013-11-23T01:47:15+00:00",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8YXP8RZiR_1",
+      "post_id": "g8YXP8RZiR",
+      "text": "November 20, 2013",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-11-20T16:38:57+00:00",
+      "likes": 4,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8YHnrxZhv_0",
+      "post_id": "g8YHnrxZhv",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-11-20T16:36:49+00:00",
+      "likes": 1,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "g8Xu_JRZgz_0",
+      "post_id": "g8Xu_JRZgz",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-11-20T16:33:27+00:00",
+      "likes": 1,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "cjpnPFRZpi_0",
+      "post_id": "cjpnPFRZpi",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-08-03T16:03:06+00:00",
+      "likes": 2,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "chRi8MRZh0_0",
+      "post_id": "chRi8MRZh0",
+      "text": "Start the conversation.",
+      "author": "voxparaguay",
+      "author_id": "voxparaguay",
+      "published_at": "2013-08-02T17:54:19+00:00",
+      "likes": 2,
+      "parent_id": null,
+      "replies_count": 0
+    }
+  ]
+}

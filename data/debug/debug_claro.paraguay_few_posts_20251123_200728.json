@@ -1,0 +1,13 @@
+{
+  "reason": "Only 5/100 posts found after 15 scrolls",
+  "context": "claro.paraguay_few_posts",
+  "info": {
+    "posts_found": 5,
+    "scroll_attempts": 40,
+    "page_name": "claro.paraguay",
+    "max_posts_requested": 100,
+    "empty_scroll_limit": 15
+  },
+  "timestamp": "20251123_200728",
+  "truncated": true
+}

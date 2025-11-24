@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "company_id": "personal-py",
+    "platform": "facebook",
+    "account": "personalpy",
+    "extracted_at": "2025-11-22T21:09:55.826111",
+    "total_posts": 3
+  },
+  "posts": [
+    {
+      "id": "1661801464661070",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1661801464661070",
+      "text": "",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 2,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "1053940012802310",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1053940012802310",
+      "text": "Marilina también tiene El Wifi en su Casa de Personal. \n \n Solicitá la fibra óptica más rápida del país con el vendedor de Personal. #ElWifiEnMiCasaEsPersonal",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 53,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "511225811862388",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=511225811862388",
+      "text": "Todos tienen El Wifi en su casa de Personal, porque ¡te duplicamos todo! Escribí a Pichi, y solicitá la mejor conexión del país, \n #ElWifiEnMiCasaEsPersonal.",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 11,
+      "shares": 0,
+      "media_type": "video"
+    }
+  ]
+}

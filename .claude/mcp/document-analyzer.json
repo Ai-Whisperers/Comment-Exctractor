@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "document-analyzer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/mcp-document-analyzer"
+      ],
+      "description": "Document analysis for sentiment scoring, keyword extraction, readability metrics, and content summarization. Perfect for analyzing extracted social media comments."
+    }
+  }
+}

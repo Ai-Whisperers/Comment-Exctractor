@@ -1,0 +1,6 @@
+{
+  "title": "Comment-Extractor Codebase Analysis",
+  "analysis_date": "November 20, 2025",
+  "project": "Social Media Comment Extractor",
+  "summary": "\nThis is a web scraping application using Playwright to extract posts and comments \nfrom social media platforms (Facebook, Instagram, and potentially others).\n\nThe architecture follows several design patterns:\n- Registry Pattern for scrapers and exporters\n- Template Method Pattern for base scraper\n- Page Object Model for Instagram scraper\n- Service Layer for orchestration\n- Adapter Pattern for storage backends\n\nMain entry point is extract.py with dual CLI implementations (extract.py and src/cli/main.py).\n"
+}

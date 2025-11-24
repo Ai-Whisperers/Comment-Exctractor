@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-11-23T17:14:41.013346",
+  "companies": {
+    "personal-py": {
+      "name": "Personal Paraguay",
+      "accounts": {
+        "facebook/personalpy": {
+          "posts_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\personal-py\\facebook\\personalpy\\20251123_171441_posts.json",
+          "comments_file": "C:\\Users\\Alejandro\\Documents\\Ivan\\Work\\Comment-Exctractor\\data\\exports\\personal-py\\facebook\\personalpy\\20251123_171441_comments.json",
+          "posts_count": 150,
+          "comments_count": 2182
+        }
+      }
+    }
+  },
+  "totals": {
+    "accounts": 1,
+    "posts": 150,
+    "comments": 2182,
+    "errors": 0
+  },
+  "saved_at": "2025-11-23T18:02:06.304026"
+}

@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "company_id": "claro-py",
+    "platform": "facebook",
+    "account": "ClaroParaguay",
+    "extracted_at": "2025-11-23T20:06:27.732677",
+    "total_posts": 5
+  },
+  "posts": [
+    {
+      "id": "pfbid0y5QH82K1P63M92BrpBMkARMehwMKiXoo5Z",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid0y5QH82K1P63M92BrpBMkARMehwMKiXoo5Zjp7MjpyTM8oUVuCWD3AmLd6KxhuCh8l",
+      "text": "",
+      "published_at": null,
+      "likes": 346,
+      "comments_count": 0,
+      "shares": 87,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQd",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQdraZEBWeJXZakZH7sFURtDRJiGqcAe8l?comment_id=1151302469481633",
+      "text": "Solicita al 0993476434 nuevas zonas habilitadas en capiata !! PRIMERA CUOTA A LOS 60 DIAS \nNO MIRAMOS INFORCOM !!",
+      "published_at": null,
+      "likes": 53000,
+      "comments_count": 2,
+      "shares": 472,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5V",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5VuMcTUkrsDzvSmWYYtapKq6NkRtRT5Nl?comment_id=438261512471603",
+      "text": "Ja’u la terere",
+      "published_at": null,
+      "likes": 2700,
+      "comments_count": 2,
+      "shares": 339,
+      "media_type": "text"
+    },
+    {
+      "id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4JctQ24a4dkoDYZVYZhXnbirZBUz3cF76fl?comment_id=436564972465447",
+      "text": "¡¡LA 14 ESTÁ DE FIESTA EN PARAGUAY CON LANÚS CAMPEÓN DE LA #Sudamericana!!... Ver más",
+      "published_at": null,
+      "likes": 2451,
+      "comments_count": 2,
+      "shares": 25,
+      "media_type": "video"
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6iTY82nn6dqw1qVjVGV6RFQh2XjQhthl?comment_id=986811696120834",
+      "text": "Solicita el servicio de claro TV \nCosto de instalación 30 mil guaraníes \nCosto mensual 89 mil  primera cuota a los 30 días! \n0991238100",
+      "published_at": null,
+      "likes": 4047,
+      "comments_count": 11,
+      "shares": 722,
+      "media_type": "text"
+    }
+  ]
+}

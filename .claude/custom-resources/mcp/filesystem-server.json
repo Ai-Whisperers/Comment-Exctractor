@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "filesystem-datasets": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "datasets/"
+      ],
+      "description": "Direct access to datasets directory for analysis without manual upload"
+    }
+  }
+}

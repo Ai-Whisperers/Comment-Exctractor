@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "company_id": "personal-py",
+    "platform": "facebook",
+    "account": "personalpy",
+    "extracted_at": "2025-11-22T21:43:11.827006",
+    "total_posts": 5
+  },
+  "posts": [
+    {
+      "id": "pfbid0PpeByUJDcKBirMNmoeNCaKeMAUhDwJhEQX",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/personalpy/posts/pfbid0PpeByUJDcKBirMNmoeNCaKeMAUhDwJhEQXQTk7EZNo2zf6PB1PmBEWUfGMRGFeEVl?comment_id=1855422408380449",
+      "text": "¡Arrancó el segundo día del Black Friday mas Tech del país! \n... Ver más",
+      "published_at": null,
+      "likes": 7,
+      "comments_count": 4,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "1661801464661070",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1661801464661070",
+      "text": "Si el Wifi de tu casa es Personal ¡TE DUPLICAMOS TODO! Elegí la conexión total al 0971 100 000. \n \n \n \n \n #ElWifiEnMiCasaEsPersonal",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 90,
+      "shares": 0,
+      "media_type": "text"
+    },
+    {
+      "id": "1053940012802310",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=1053940012802310",
+      "text": "Marilina también tiene El Wifi en su Casa de Personal. \n \n Solicitá la fibra óptica más rápida del país con el vendedor de Personal. #ElWifiEnMiCasaEsPersonal",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 53,
+      "shares": 0,
+      "media_type": "video"
+    },
+    {
+      "id": "511225811862388",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/watch/?v=511225811862388",
+      "text": "",
+      "published_at": null,
+      "likes": 0,
+      "comments_count": 2,
+      "shares": 0,
+      "media_type": "video"
+    },
+    {
+      "id": "pfbid0QABz4Wkmwn1EFRfEHSzBUv4BSrWjwtG8Zo",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/personalpy/posts/pfbid0QABz4Wkmwn1EFRfEHSzBUv4BSrWjwtG8ZotS6bxaZhYhnf13PAznk71rdqdcnvvul?comment_id=1270517664836135",
+      "text": "SABÍAS QUÉ..?\nLos nombres de los países de América del Sur provienen de una fascinante mezcla de lenguas indígenas, raíces latinas, exploradores europeos y figuras hi... Ver más",
+      "published_at": null,
+      "likes": 2370,
+      "comments_count": 8,
+      "shares": 718,
+      "media_type": "text"
+    }
+  ]
+}

@@ -1,0 +1,198 @@
+{
+  "metadata": {
+    "company_id": "claro-py",
+    "platform": "facebook",
+    "account": "ClaroParaguay",
+    "extracted_at": "2025-11-23T20:06:27.732677",
+    "total_comments": 17
+  },
+  "comments": [
+    {
+      "id": "pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQd_c0",
+      "post_id": "pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQd",
+      "text": "@destacar",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:07:50.710303",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQd_c1",
+      "post_id": "pfbid072bcB7TRKPbHfAi6rJ5Bjn8neqqWCAqJQd",
+      "text": "@seguidores",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:07:50.710388",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5V_c0",
+      "post_id": "pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5V",
+      "text": "@destacar",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:02.426331",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5V_c1",
+      "post_id": "pfbid0gj8YEFwvMKA1pzabsEyBFG1hjj4hu9CY5V",
+      "text": "@seguidores",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:02.426347",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc_c0",
+      "post_id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc",
+      "text": "Para San isidro zona itacua cuando (Encarnación)",
+      "author": "Dyana M Ruiz",
+      "author_id": "Dyana M Ruiz",
+      "published_at": "2024-11-23T20:08:12.829202",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 1
+    },
+    {
+      "id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc_c1",
+      "post_id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc",
+      "text": "Dyana M Ruiz muy pronto  agendame y en mis estados están las zonas habilitadas cada semana",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:12.829220",
+      "likes": 0,
+      "parent_id": "pfbid02nPrP14oPJxbr8JYkPdeYVWRXheMf4m4Jc_c0",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c0",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Me interesa",
+      "author": "Lilian Cuenca",
+      "author_id": "Lilian Cuenca",
+      "published_at": "2024-11-23T20:08:27.778447",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 1
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c1",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Lilian Cuenca déjame tu número",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778465",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c0",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c2",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Hola... Me interesa",
+      "author": "Elsa Vera Insfran",
+      "author_id": "Elsa Vera Insfran",
+      "published_at": "2024-11-23T20:08:27.778470",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 4
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c3",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Elsa Vera Insfran déjame tu número",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778474",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c2",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c4",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Elsa Vera Insfran 0993 476434",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778478",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c2",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c5",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Claro Paraguay te hable al whatsapp",
+      "author": "Bordon Belen Yami",
+      "author_id": "Bordon Belen Yami",
+      "published_at": "2024-11-23T20:08:27.778482",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c2",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c6",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Bordon Belen Yami  +595 993 476434",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778487",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c2",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c7",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Hola me pasas info",
+      "author": "Bordon Belen Yami",
+      "author_id": "Bordon Belen Yami",
+      "published_at": "2024-11-23T20:08:27.778490",
+      "likes": 0,
+      "parent_id": null,
+      "replies_count": 3
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c8",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Bordon Belen Yami  déjame tu número",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778494",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c7",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c9",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Bordon Belen Yami  0993476434",
+      "author": "Neo Fibra",
+      "author_id": "Neo Fibra",
+      "published_at": "2024-11-23T20:08:27.778498",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c7",
+      "replies_count": 0
+    },
+    {
+      "id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c10",
+      "post_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6",
+      "text": "Claro Paraguay te hable al whaspp",
+      "author": "Bordon Belen Yami",
+      "author_id": "Bordon Belen Yami",
+      "published_at": "2024-11-23T20:08:27.778502",
+      "likes": 0,
+      "parent_id": "pfbid0mWdhwEjFLUgpUTce61xxngWvUMczbF6YE6_c7",
+      "replies_count": 0
+    }
+  ]
+}

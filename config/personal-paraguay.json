@@ -1,0 +1,29 @@
+{
+  "name": "personal-paraguay",
+  "description": "Personal Paraguay telecom company - Test case",
+  "accounts": [
+    {
+      "platform": "facebook",
+      "identifier": "personalpy",
+      "display_name": "Personal Paraguay (Facebook)",
+      "enabled": true
+    },
+    {
+      "platform": "instagram",
+      "identifier": "personalpy",
+      "display_name": "Personal Paraguay (Instagram)",
+      "enabled": true
+    },
+    {
+      "platform": "twitter",
+      "identifier": "personalpy",
+      "display_name": "Personal Paraguay (Twitter)",
+      "enabled": true
+    }
+  ],
+  "notes": {
+    "facebook_followers": "495,428",
+    "instagram_followers": "110,000",
+    "linkedin_followers": "60,674"
+  }
+}

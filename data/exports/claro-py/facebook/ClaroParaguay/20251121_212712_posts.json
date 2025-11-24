@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "company_id": "claro-py",
+    "platform": "facebook",
+    "account": "ClaroParaguay",
+    "extracted_at": "2025-11-21T21:27:12.983917",
+    "total_posts": 1
+  },
+  "posts": [
+    {
+      "id": "pfbid0yFZHRAakCjtKTY435otwQL4qYxCy4g69YR",
+      "platform": "facebook",
+      "url": "https://www.facebook.com/claro.paraguay/posts/pfbid0yFZHRAakCjtKTY435otwQL4qYxCy4g69YRfCe4QXEsHhs2teboYTbK3ePtvE6qVRl",
+      "text": "Rendillantas, tu carro #EnManosSeguras... Ver más",
+      "published_at": null,
+      "likes": 5,
+      "comments_count": 0,
+      "shares": 0,
+      "media_type": "text"
+    }
+  ]
+}
